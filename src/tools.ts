@@ -190,6 +190,7 @@ export function getToolsForDefaultPreset(): string[] {
 /**
  * NOTE: This MUST stay in sync with https://console.statsig.com/4aF3Ewatb6xPVpCwxb5nA3/dynamic_configs/claude_code_global_system_caching, in order to cache the system prompt across users.
  */
+// ! **getAllBaseTools()**：返回所有内置工具实例（40+）
 export function getAllBaseTools(): Tools {
   return [
     AgentTool,
@@ -268,6 +269,7 @@ export function filterToolsByDenyRules<
   return tools.filter(tool => !getDenyRuleForTool(permissionContext, tool))
 }
 
+// ! **getTools(context)**：按权限规则、feature flags、运行模式过滤
 export const getTools = (permissionContext: ToolPermissionContext): Tools => {
   // Simple mode: only Bash, Read, and Edit tools
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
@@ -342,6 +344,7 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
  * @param mcpTools - MCP tools from appState.mcp.tools
  * @returns Combined, deduplicated array of built-in and MCP tools
  */
+// ! **assembleToolPool(context, mcpTools)**：合并内置工具 + MCP 外部工具，去重排序（排序保证 prompt cache 命中率稳定）
 export function assembleToolPool(
   permissionContext: ToolPermissionContext,
   mcpTools: Tools,
