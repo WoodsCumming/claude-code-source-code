@@ -308,6 +308,7 @@ async function* queryLoop(
     // Destructure state at the top of each iteration. toolUseContext alone
     // is reassigned within an iteration (queryTracking, messages updates);
     // the rest are read-only between continue sites.
+    // ! 1. 解构当前状态（只读）
     let { toolUseContext } = state
     const {
       messages,
@@ -328,6 +329,7 @@ async function* queryLoop(
     // nothing in prod). Turn-0 user-input discovery still blocks in
     // userInputAttachments — that's the one signal where there's no prior
     // work to hide under.
+    // ! 2. 预取：skill discovery（后台并发，不阻塞）
     const pendingSkillPrefetch = skillPrefetch?.startSkillDiscoveryPrefetch(
       null,
       messages,
@@ -362,6 +364,7 @@ async function* queryLoop(
       queryTracking,
     }
 
+    // ! 3. 只取 compact 边界之后的消息（节省 token）
     let messagesForQuery = [...getMessagesAfterCompactBoundary(messages)]
 
     let tracking = autoCompactTracking
@@ -656,6 +659,7 @@ async function* queryLoop(
         try {
           let streamingFallbackOccured = false
           queryCheckpoint('query_api_streaming_start')
+          // ! 4. 调用 LLM API（流式）
           for await (const message of deps.callModel({
             messages: prependUserContext(messagesForQuery, userContext),
             systemPrompt: fullSystemPrompt,
@@ -1016,6 +1020,7 @@ async function* queryLoop(
       if (streamingToolExecutor) {
         // Consume remaining results - executor generates synthetic tool_results for
         // aborted tools since it checks the abort signal in executeTool()
+        // ! 5. 等待所有工具执行完成，收集结果
         for await (const update of streamingToolExecutor.getRemainingResults()) {
           if (update.message) {
             yield update.message
@@ -1305,6 +1310,7 @@ async function* queryLoop(
         continue
       }
 
+      // ! budgetTracker（src/utils/tokenBudget.ts），用于追踪每轮消耗的 token 数，配合 taskBudgetRemaining 在跨 compact 边界后也能准确统计总消耗。当预算耗尽时，循环以 { type: 'budget_exceeded' } 终止。
       if (feature('TOKEN_BUDGET')) {
         const decision = checkTokenBudget(
           budgetTracker!,
@@ -1702,6 +1708,7 @@ async function* queryLoop(
     }
 
     // Check if we've reached the max turns limit
+    // ! 6. 判断退出 or 继续
     if (maxTurns && nextTurnCount > maxTurns) {
       yield createAttachmentMessage({
         type: 'max_turns_reached',
@@ -1712,6 +1719,7 @@ async function* queryLoop(
     }
 
     queryCheckpoint('query_recursive_call')
+    // ! 7. 将工具结果追加到消息，进入下一轮
     const next: State = {
       messages: [...messagesForQuery, ...assistantMessages, ...toolResults],
       toolUseContext: toolUseContextWithQueryTracking,

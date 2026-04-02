@@ -48,6 +48,7 @@ docs/
 │   └── [05-향후-로드맵.md]                     # 향후 로드맵 — Numbat, KAIROS, 음성 모드, 미공개 도구
 │
 └── zh/                                        # 中文
+    ├── [00-架构文档.md]                         # 架构文档 — 完整系统架构，数据流，工具/Agent/API/Prompt 详解
     ├── [01-遥测与隐私分析.md]                    # 遥测与隐私 — 收集了什么，为什么无法退出
     ├── [02-隐藏功能与模型代号.md]                # 隐藏功能 — 模型代号，feature flag，内外用户差异
     ├── [03-卧底模式分析.md]                     # 卧底模式 — 在开源项目中隐藏 AI 身份
@@ -59,6 +60,7 @@ docs/
 
 | # | Topic | Key Findings |
 |---|-------|-------------|
+| 00 | **Architecture** | Full system architecture: bootstrap flow, query loop, tool system (47 built-in tools), agent delegation, API layer (streaming + prompt caching), permission system, MCP integration, memory/compaction/config systems. Chinese only. | 
 | 01 | **Telemetry & Privacy** | Two analytics sinks (1P → Anthropic, Datadog). Environment fingerprint, process metrics, repo hash on every event. **No UI-exposed opt-out** for 1st-party logging. `OTEL_LOG_TOOL_DETAILS=1` enables full tool input capture. |
 | 02 | **Hidden Features & Codenames** | Animal codenames (Capybara v8, Tengu, Fennec→Opus 4.6, **Numbat** next). Feature flags use random word pairs (`tengu_frond_boric`) to obscure purpose. Internal users get better prompts, verification agents, and effort anchors. Hidden commands: `/btw`, `/stickers`. |
 | 03 | **Undercover Mode** | Anthropic employees auto-enter undercover mode in public repos. Model instructed: *"Do not blow your cover"* — strip all AI attribution, write commits "as a human developer would." **No force-OFF exists.** Raises transparency questions for open-source communities. |
