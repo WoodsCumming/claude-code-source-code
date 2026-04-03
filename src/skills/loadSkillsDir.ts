@@ -635,6 +635,7 @@ async function loadSkillsFromCommandsDir(
  *
  * @param cwd Current working directory for project directory traversal
  */
+// ! 从磁盘加载用户自定义 skill
 export const getSkillDirCommands = memoize(
   async (cwd: string): Promise<Command[]> => {
     const userSkillsDir = join(getClaudeConfigHomeDir(), 'skills')
@@ -733,6 +734,11 @@ export const getSkillDirCommands = memoize(
       ),
     )
 
+    // ! bundled	内置技能：/commit、/review、/doctor、/compact 等
+    // ! skills	用户在 ~/.claude/skills/ 目录下的自定义 Markdown 文件
+    // ! plugin	插件提供的技能
+    // ! managed	平台管理员配置的技能
+    // ! mcp	MCP Server 工具自动生成的 skill
     const seenFileIds = new Map<
       string,
       SettingSource | 'builtin' | 'mcp' | 'plugin' | 'bundled'

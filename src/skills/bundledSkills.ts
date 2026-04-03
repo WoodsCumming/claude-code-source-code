@@ -12,6 +12,7 @@ import type { HooksSettings } from '../utils/settings/types.js'
  * Definition for a bundled skill that ships with the CLI.
  * These are registered programmatically at startup.
  */
+// ! 内置技能注册
 export type BundledSkillDefinition = {
   name: string
   description: string

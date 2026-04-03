@@ -22,6 +22,7 @@ export type ParsedSlashCommand = {
  * parseSlashCommand('/mcp:tool (MCP) arg1 arg2')
  * // => { commandName: 'mcp:tool (MCP)', args: 'arg1 arg2', isMcp: true }
  */
+// ! 解析 /command args 语法
 export function parseSlashCommand(input: string): ParsedSlashCommand | null {
   const trimmedInput = input.trim()
 
