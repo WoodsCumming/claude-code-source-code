@@ -238,6 +238,15 @@ export async function* query(
   return terminal
 }
 
+/** // ! 终止原因	触发位置	机制
+    // ! completed	第 1360 行	AI 未发出 tool_use → needsFollowUp = false → 经过 stop hooks → 返回
+    // ! blocking_limit	第 646 行	Token 计数超过硬限制（非 autocompact 模式）→ 生成 PTL 错误消息 → 返回
+    // ! aborted_streaming	第 1054 行	abortController.signal.aborted → 为未完成的 tool_use 生成合成 tool_result → 返回
+    // ! model_error	第 999 行	callModel() 抛出异常 → 生成错误消息 → 返回
+    // ! prompt_too_long	第 1178 行	413 错误且 reactive compact 无法恢复 → 暂扣的错误消息被释放 → 返回
+    // ! image_error	第 980/1178 行	图片尺寸/大小错误 → 直接返回
+    // ! stop_hook_prevented	第 1282 行	Stop hook 返回 preventContinuation: true → 返回
+ */
 async function* queryLoop(
   params: QueryParams,
   consumedCommandUuids: string[],
