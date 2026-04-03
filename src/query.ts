@@ -809,6 +809,44 @@ messagesForQuery（处理后的消息）→ 发往 API
                     toolUseContext.options.tools,
                     block.name,
                   )
+                  /**
+                   * backfillObservableInput 的作用是：在工具 input被外部观察者（hooks、权限检查、transcript）看到之前，对其副本做规范化处理。
+
+                    ---
+                    核心设计
+
+                    AI 发出的 tool_use input 是"原始形态"——可能包含相对路径（~/foo、./bar）或缺少某些派生字段。这个原始 input 直接发给
+                    API，不能修改（改了会破坏 prompt cache）。
+
+                    backfillObservableInput 在一个副本上操作，让外部观察者看到的是规范化后的版本：
+
+                    AI 生成的原始 input（发给 API，不变）
+                            ↓ 浅拷贝
+                    backfillObservableInput(copy)  ← 在副本上 mutate
+                            ↓
+                    hooks / 权限检查 / transcript 看到规范化后的 copy
+
+                    ---
+                    各工具的实现
+
+                    FileReadTool / FileEditTool / FileWriteTool：把 file_path 展开为绝对路径
+                    input.file_path = expandPath(input.file_path)
+                    // ~/foo → /Users/xxx/foo
+                    // ./bar → /cwd/bar
+                    目的：hooks 的 allowlist 是绝对路径，如果不展开，AI 可以用 ~ 或相对路径绕过权限检查。
+
+                    SendMessageTool：补充派生字段
+                    // AI 只传了 { to: '*', message: '...' }
+                    // backfill 后变成 { to: '*', message: '...', type: 'broadcast', content: '...' }
+                    目的：hooks 文档约定了 type/content 等字段，但 AI 不一定会传，这里补全。
+
+                    ---
+                    关键约束
+
+                    - 必须幂等（可以多次调用，结果相同）
+                    - 只在副本上 mutate，原始 input 永远不动
+                    - hook 返回 updatedInput 时不会重新调用它（hook 自己负责 input 的形状）
+                   */
                   if (tool?.backfillObservableInput) {
                     const originalInput = block.input as Record<string, unknown>
                     const inputCopy = { ...originalInput }
