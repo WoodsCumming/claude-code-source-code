@@ -1854,6 +1854,7 @@ async function* queryModel(
         yield e.value
       }
     } while (!e.done)
+    // ! 不断获取字符流
     stream = e.value as Stream<BetaRawMessageStreamEvent>
 
     // reset state

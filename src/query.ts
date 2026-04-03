@@ -842,6 +842,8 @@ async function* queryLoop(
                 streamingToolExecutor &&
                 !toolUseContext.abortController.signal.aborted
               ) {
+                // ! 执行工具
+                // ! 这是工具调用系统中最精妙的部分：在 LLM 流式输出的同时，就开始并发执行工具，不等全部 tool_use block 到齐。
                 for (const toolBlock of msgToolUseBlocks) {
                   streamingToolExecutor.addTool(toolBlock, message)
                 }

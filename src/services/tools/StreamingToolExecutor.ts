@@ -24,10 +24,10 @@ type TrackedTool = {
   assistantMessage: AssistantMessage
   status: ToolStatus
   isConcurrencySafe: boolean
-  promise?: Promise<void>
-  results?: Message[]
+  promise?: Promise<void>     // ! 执行 Promise
+  results?: Message[]         // ! 执行结果（缓存）
   // Progress messages are stored separately and yielded immediately
-  pendingProgress: Message[]
+  pendingProgress: Message[]  // ! 进度消息（立即推送）
   contextModifiers?: Array<(context: ToolUseContext) => ToolUseContext>
 }
 
@@ -45,6 +45,8 @@ export class StreamingToolExecutor {
   // Child of toolUseContext.abortController. Fires when a Bash tool errors
   // so sibling subprocesses die immediately instead of running to completion.
   // Aborting this does NOT abort the parent — query.ts won't end the turn.
+  // ! StreamingToolExecutor 持有一个 siblingAbortController——当一个 BashTool 执行出错时，会通过这个 controller 立即取消所有正在并发执行的兄弟工具进程，避免无效工作继续消耗资源。
+  // ! 这个 controller 是父级 toolUseContext.abortController 的子级：兄弟取消不会影响整个 query 的生命周期，只是当前批次的工具被取消。
   private siblingAbortController: AbortController
   private discarded = false
   // Signal to wake up getRemainingResults when progress is available
@@ -120,12 +122,14 @@ export class StreamingToolExecutor {
       pendingProgress: [],
     })
 
+    // ! 立即尝试调度
     void this.processQueue()
   }
 
   /**
    * Check if a tool can execute based on current concurrency state
    */
+  // ! 并发条件判断
   private canExecuteTool(isConcurrencySafe: boolean): boolean {
     const executingTools = this.tools.filter(t => t.status === 'executing')
     return (
@@ -137,6 +141,8 @@ export class StreamingToolExecutor {
   /**
    * Process the queue, starting tools when concurrency conditions allow
    */
+  // ! 每个被追踪的工具状态
+  // ! 'queued' → 'executing' → 'completed' → 'yielded'
   private async processQueue(): Promise<void> {
     for (const tool of this.tools) {
       if (tool.status !== 'queued') continue
@@ -317,6 +323,7 @@ export class StreamingToolExecutor {
         { once: true },
       )
 
+      // ! 每次工具调用都经过以下完整权限检查链（src/services/tools/toolExecution.ts）：
       const generator = runToolUse(
         tool.block,
         tool.assistantMessage,
@@ -450,6 +457,7 @@ export class StreamingToolExecutor {
    * Wait for remaining tools and yield their results as they complete
    * Also yields progress messages as they become available
    */
+  // ! getRemainingResults() 按工具接收顺序（非完成顺序）yield 结果。即使并发执行，结果的顺序始终与 LLM 发出 tool_use 的顺序一致，保证了 LLM 下一轮收到的 tool_result 对应关系是确定的。
   async *getRemainingResults(): AsyncGenerator<MessageUpdate, void> {
     if (this.discarded) {
       return

@@ -334,6 +334,19 @@ function getMcpServerBaseUrlFromToolName(
   return getLoggingSafeMcpBaseUrl(serverConnection.config)
 }
 
+/**
+ * runToolUse(block)
+  ├─ 1. Zod schema 校验输入参数
+  ├─ 2. tool.validateInput()（工具自定义校验，可选）
+  ├─ 3. runPreToolUseHooks()     ← 前置 hooks
+  ├─ 4. canUseTool() 权限决策
+  │       ├─ deny 规则匹配 → 拒绝（记入 permissionDenials）
+  │       ├─ ask 规则匹配  → 弹出用户确认对话框（阻塞）
+  │       └─ allow         → 通过
+  ├─ 5. tool.call(input, context, ...)  ← 实际执行
+  ├─ 6. runPostToolUseHooks()    ← 后置 hooks
+  └─ 7. 格式化为 tool_result 消息块，返回给 LLM
+ */
 export async function* runToolUse(
   toolUse: ToolUseBlock,
   assistantMessage: AssistantMessage,
