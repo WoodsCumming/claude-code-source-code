@@ -3619,6 +3619,26 @@ async function run(): Promise<CommanderCommand> {
               await exitWithError(root, `Unable to resume from ccshare: ${errorMessage(error)}`, () => gracefulShutdown(1));
             }
           } else {
+            /*
+              1. 解析 resume 参数：
+                 ├── UUID 格式 → getTranscriptPathForSession(uuid)
+                 ├── .jsonl 文件路径 → 直接使用
+                 └── boolean → 最近一次会话的 picker
+                 
+              2. loadTranscriptFromFile(path)
+                 ├── 按 JSONL 行解析
+                 ├── 过滤出消息类型记录
+                 └── 重建 Message[] 数组
+
+              3. 恢复上下文状态：
+                 ├── restoreCostStateForSession(sessionId)  ← 恢复累计费用
+                 ├── 恢复 agentSetting（用户选择的 Agent 类型）
+                 └── 如果有 --rewind-files，恢复文件到指定消息时的快照
+
+              4. 创建 QueryEngine({ initialMessages: restoredMessages })
+                 └── 从恢复的消息继续对话
+            */
+
             const resolvedPath = resolve(options.resume);
             try {
               const resumeStart = performance.now();

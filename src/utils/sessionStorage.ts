@@ -2569,6 +2569,22 @@ export async function fetchLogs(limit?: number): Promise<LogOption[]> {
  * Append an entry to a session file. Creates the parent dir if missing.
  */
 /* eslint-disable custom-rules/no-sync-fs -- sync callers (exit cleanup, materialize) */
+
+/**
+ * 写入流程：
+  appendEntryToFile(sessionId, entry)
+    ↓
+  ensureCurrentSessionFile()   ← 懒初始化：首次写入时才创建文件
+    ↓
+  序列化为 JSON + 换行符
+    ↓
+  appendFile(path, line)       ← 原子追加
+    ↓
+  如果配置了远程持久化：
+    persistToRemote(sessionId, entry)
+      ├── CCR v2: internalEventWriter('transcript', entry)
+      └── v1 Ingress: sessionIngress.appendSessionLog(...)
+ */
 function appendEntryToFile(
   fullPath: string,
   entry: Record<string, unknown>,
