@@ -566,6 +566,45 @@ messagesForQuery（处理后的消息）→ 发往 API
     // Set during streaming whenever a tool_use block arrives — the sole
     // loop-exit signal. If false after streaming, we're done (modulo stop-hook retry).
     const toolUseBlocks: ToolUseBlock[] = []
+    /**
+     * needsFollowUp 是主循环的继续标志，含义是："AI 这轮回复里包含了工具调用，需要执行工具并把结果反馈给AI，然后继续下一轮"。
+
+        ---
+        具体逻辑
+
+        置为 true 的时机（query.ts:846）：流式解析 assistant 消息时，只要检测到有 tool_use 块，就设为 true。
+
+        置为 false 的时机：
+        - 初始值就是 false（query.ts:569）
+        - 发生错误需要重试时重置为 false（query.ts:740, 921）
+
+        用于判断退出的地方（query.ts:1077）：
+        if (!needsFollowUp) {
+            // 检查是否有 withheld 的 413 错误需要处理
+            // 或者直接退出主循环
+        }
+
+        ---
+        在主循环中的角色
+
+        while (true) {
+            调用 API，流式接收响应
+
+            if (有 tool_use 块) → needsFollowUp = true
+
+            if (!needsFollowUp) {
+                // AI 没有调用工具，说明它直接给出了最终回答
+                // 处理 413 错误恢复，或者退出循环
+            }
+
+            // needsFollowUp = true：执行工具，把结果加入消息列表
+            // 继续下一轮循环，把工具结果发给 AI
+        }
+
+        本质上就是 agentic loop 的循环条件：AI 调用工具 → 执行工具 → 把结果给 AI → AI 再回复 → 直到 AI
+        不再调用工具（needsFollowUp = false）为止。
+
+     */
     let needsFollowUp = false
 
     queryCheckpoint('query_setup_start')
