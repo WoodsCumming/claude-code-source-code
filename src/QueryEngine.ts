@@ -183,18 +183,18 @@ export type QueryEngineConfig = {
  */
 export class QueryEngine {
   private config: QueryEngineConfig
-  private mutableMessages: Message[]
-  private abortController: AbortController
-  private permissionDenials: SDKPermissionDenial[]
-  private totalUsage: NonNullableUsage
+  private mutableMessages: Message[]  // ! 完整对话历史，跨 turn 累积
+  private abortController: AbortController  // ! 会话级中断控制
+  private permissionDenials: SDKPermissionDenial[]  // ! 权限拒绝记录
+  private totalUsage: NonNullableUsage  // ! 累计 token 消耗（input/output/cache）
   private hasHandledOrphanedPermission = false
-  private readFileState: FileStateCache
+  private readFileState: FileStateCache // ! 已读文件内容缓存，避免重复读取
   // Turn-scoped skill discovery tracking (feeds was_discovered on
   // tengu_skill_tool_invocation). Must persist across the two
   // processUserInputContext rebuilds inside submitMessage, but is cleared
   // at the start of each submitMessage to avoid unbounded growth across
   // many turns in SDK mode.
-  private discoveredSkillNames = new Set<string>()
+  private discoveredSkillNames = new Set<string>()  // ! 当前 turn 已发现的 skill
   private loadedNestedMemoryPaths = new Set<string>()
 
   constructor(config: QueryEngineConfig) {
