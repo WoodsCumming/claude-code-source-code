@@ -379,6 +379,14 @@ async function* queryLoop(
     const persistReplacements =
       querySource.startsWith('agent:') ||
       querySource.startsWith('repl_main_thread')
+    
+    // ! messagesForQuery（原始消息）
+    // ! ↓ applyToolResultBudget()    — 工具结果预算截断（按 maxResultSizeChars）
+    // ! ↓ snipCompactIfNeeded()      — 历史 Snip 压缩（HISTORY_SNIP feature）
+    // ! ↓ microcompact()             — 微压缩（工具结果摘要）
+    // ! ↓ applyCollapsesIfNeeded()   — 上下文折叠（CONTEXT_COLLAPSE feature）
+    // ! ↓ autocompact()              — 自动压缩（超出阈值时触发）
+messagesForQuery（处理后的消息）→ 发往 API
     messagesForQuery = await applyToolResultBudget(
       messagesForQuery,
       toolUseContext.contentReplacementState,
