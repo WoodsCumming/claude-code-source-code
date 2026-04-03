@@ -202,18 +202,18 @@ export type QueryParams = {
 
 // Mutable state carried between loop iterations
 type State = {
-  messages: Message[]
-  toolUseContext: ToolUseContext
-  autoCompactTracking: AutoCompactTrackingState | undefined
-  maxOutputTokensRecoveryCount: number
-  hasAttemptedReactiveCompact: boolean
-  maxOutputTokensOverride: number | undefined
-  pendingToolUseSummary: Promise<ToolUseSummaryMessage | null> | undefined
-  stopHookActive: boolean | undefined
-  turnCount: number
+  messages: Message[] // ! 当前对话消息
+  toolUseContext: ToolUseContext  // ! 工具上下文（含权限）
+  autoCompactTracking: AutoCompactTrackingState | undefined // ! 压缩跟踪
+  maxOutputTokensRecoveryCount: number  // ! 输出截断恢复计数
+  hasAttemptedReactiveCompact: boolean  // ! 是否已尝试即时压缩
+  maxOutputTokensOverride: number | undefined // ! 输出 token 上限覆盖
+  pendingToolUseSummary: Promise<ToolUseSummaryMessage | null> | undefined  // ! 异步工具摘要
+  stopHookActive: boolean | undefined // ! Stop hook 是否激活
+  turnCount: number // ! 轮次计数
   // Why the previous iteration continued. Undefined on first iteration.
   // Lets tests assert recovery paths fired without inspecting message contents.
-  transition: Continue | undefined
+  transition: Continue | undefined  // ! 上一次继续的原因
 }
 
 export async function* query(
