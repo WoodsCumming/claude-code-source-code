@@ -206,6 +206,7 @@ export class QueryEngine {
     this.totalUsage = EMPTY_USAGE
   }
 
+  // ! 核心方法
   async *submitMessage(
     prompt: string | ContentBlockParam[],
     options?: { uuid?: string; isMeta?: boolean },
@@ -235,11 +236,13 @@ export class QueryEngine {
       orphanedPermission,
     } = this.config
 
+    // ! 1. 清除 turn 级追踪状态
     this.discoveredSkillNames.clear()
     setCwd(cwd)
     const persistSession = !isSessionPersistenceDisabled()
     const startTime = Date.now()
 
+    // ! 4. 包装权限检查（追踪每次拒绝）
     // Wrap canUseTool to track permission denials
     const wrappedCanUseTool: CanUseToolFn = async (
       tool,
@@ -271,6 +274,7 @@ export class QueryEngine {
     }
 
     const initialAppState = getAppState()
+    // ! 解析模型（用户可能中途切换了模型）
     const initialMainLoopModel = userSpecifiedModel
       ? parseUserSpecifiedModel(userSpecifiedModel)
       : getMainLoopModel()
@@ -285,6 +289,8 @@ export class QueryEngine {
     // Narrow once so TS tracks the type through the conditionals below.
     const customPrompt =
       typeof customSystemPrompt === 'string' ? customSystemPrompt : undefined
+    
+    // ! 3. 动态组装 System Prompt（每次 turn 都重新构建）
     const {
       defaultSystemPrompt,
       userContext: baseUserContext,
@@ -672,6 +678,7 @@ export class QueryEngine {
       ? countToolCalls(this.mutableMessages, SYNTHETIC_OUTPUT_TOOL_NAME)
       : 0
 
+    // ! 5. 调用核心 query() 函数执行 agentic loop
     for await (const message of query({
       messages,
       systemPrompt,
