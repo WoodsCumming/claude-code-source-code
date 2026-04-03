@@ -2003,6 +2003,12 @@ async function* queryModel(
             }
             break
           }
+          // ! 内容块类型	Delta 类型	累加逻辑
+          // ! text	text_delta	text += delta.text
+          // ! thinking	thinking_delta + signature_delta	thinking += delta.thinking，signature = delta.signature
+          // ! tool_use	input_json_delta	input += delta.partial_json（JSON 字符串增量拼接）
+          // ! server_tool_use	input_json_delta	同 tool_use
+          // ! connector_text	connector_text_delta	特殊连接器文本（feature flag 控制）
           case 'content_block_start':
             switch (part.content_block.type) {
               case 'tool_use':
@@ -2179,6 +2185,17 @@ async function* queryModel(
             }
             break
           }
+          // ! 一次 AI 响应可能包含多个内容块，交替出现：
+          // ! content_block_start (text, index=0)     "我来帮你修复这个 bug。"
+          // ! content_block_delta  (text_delta)       "首先..."
+          // ! content_block_stop  (index=0)
+          // ! content_block_start (tool_use, index=1) { name: "Read", input: "..." }
+          // ! content_block_delta  (input_json_delta) '{"file_p' → 'ath":' → '"src/foo.ts"}'
+          // ! content_block_stop  (index=1)
+          // ! content_block_start (text, index=2)     "我已经看到了问题所在..."
+          // ! content_block_stop  (index=2)
+          // ! 每个 content_block_stop 触发一次 yield，将完整的 AssistantMessage 推送给消费者。这意味着一个 AI 响应会产生多条 AssistantMessage——文本消息和工具调用消息交替产出。
+          // ! stop_reason 要等到 message_delta 才确定（可能是 end_turn、tool_use、max_tokens 等），所以最后一条消息的 stop_reason 是回写的：
           case 'content_block_stop': {
             const contentBlock = contentBlocks[part.index]
             if (!contentBlock) {
@@ -2252,6 +2269,7 @@ async function* queryModel(
             // captures the final values.
             stopReason = part.delta.stop_reason
 
+            // ! 直接属性修改，不用对象替换, 因为 transcript 写队列持有 message.message 的引用
             const lastMsg = newMessages.at(-1)
             if (lastMsg) {
               lastMsg.message.usage = usage
