@@ -1977,6 +1977,16 @@ async function* queryModel(
           isFirstChunk = false
         }
 
+        // ! message_start           ← 消息开始，包含 model、usage 初始值
+        // !  ├── content_block_start   ← 内容块开始（text / tool_use / thinking）
+        // !  │   ├── content_block_delta  ← 增量数据（text_delta / input_json_delta / thinking_delta）
+        // !  │   ├── content_block_delta  ← ... 持续到达
+        // !  │   └── content_block_stop   ← 内容块结束，yield AssistantMessage
+        // !  ├── content_block_start   ← 下一个内容块...
+        // !  │   └── ...
+        // !  └── message_delta       ← stop_reason + 最终 usage
+        // ! message_stop            ← 消息结束
+
         switch (part.type) {
           case 'message_start': {
             partialMessage = part.message
