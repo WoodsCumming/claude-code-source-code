@@ -120,6 +120,7 @@ import {
 } from './prompt.js'
 
 export const POST_COMPACT_MAX_FILES_TO_RESTORE = 5
+// ! 压缩后可用 token 预算
 export const POST_COMPACT_TOKEN_BUDGET = 50_000
 export const POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000
 // Skills can be large (verify=18.7KB, claude-api=20.1KB). Previously re-injected

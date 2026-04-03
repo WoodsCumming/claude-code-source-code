@@ -9,6 +9,7 @@ import { getModelCapability } from './model/modelCapabilities.js'
 export const MODEL_CONTEXT_WINDOW_DEFAULT = 200_000
 
 // Maximum output tokens for compact operations
+// ! 摘要最大输出 token
 export const COMPACT_MAX_OUTPUT_TOKENS = 20_000
 
 // Default max output tokens

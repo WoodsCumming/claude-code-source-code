@@ -3958,6 +3958,7 @@ export async function* executeSubagentStartHooks(
  * @param timeoutMs Optional timeout in milliseconds for hook execution
  * @returns Object with optional newCustomInstructions and userDisplayMessage
  */
+// ! **executePreCompactHooks()**：压缩前触发，可注入自定义摘要指令（如"重点保留测试相关上下文"）
 export async function executePreCompactHooks(
   compactData: {
     trigger: 'manual' | 'auto'
@@ -4031,6 +4032,7 @@ export async function executePreCompactHooks(
  * @param timeoutMs Optional timeout in milliseconds for hook execution
  * @returns Object with optional userDisplayMessage
  */
+// ! **executePostCompactHooks()**：压缩后触发，通知下游系统
 export async function executePostCompactHooks(
   compactData: {
     trigger: 'manual' | 'auto'
