@@ -8,9 +8,9 @@ import { getAPIProvider } from './model/providers.js'
 import { getSettingsWithErrors } from './settings/settings.js'
 
 export type ThinkingConfig =
-  | { type: 'adaptive' }
-  | { type: 'enabled'; budgetTokens: number }
-  | { type: 'disabled' }
+  | { type: 'adaptive' }                        // ! 自适应（模型自行决定是否思考）
+  | { type: 'enabled'; budgetTokens: number }   // ! 显式启用，指定思考 token 上限
+  | { type: 'disabled' }                        // ! 关闭
 
 /**
  * Build-time gate (feature) + runtime gate (GrowthBook). The build flag
@@ -26,6 +26,7 @@ export function isUltrathinkEnabled(): boolean {
 /**
  * Check if text contains the "ultrathink" keyword.
  */
+// ! 彩蛋功能：用户在消息中输入 ultrathink 关键字，会触发最大 budget 的 thinking 模式
 export function hasUltrathinkKeyword(text: string): boolean {
   return /\bultrathink\b/i.test(text)
 }
