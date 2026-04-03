@@ -69,14 +69,14 @@ export {
 }
 
 type StoredCostState = {
-  totalCostUSD: number
-  totalAPIDuration: number
-  totalAPIDurationWithoutRetries: number
-  totalToolDuration: number
-  totalLinesAdded: number
-  totalLinesRemoved: number
-  lastDuration: number | undefined
-  modelUsage: { [modelName: string]: ModelUsage } | undefined
+  totalCostUSD: number  // ! 累计美元花费
+  totalAPIDuration: number  // ! API 调用总时长（含重试）
+  totalAPIDurationWithoutRetries: number  // ! 不含重试的纯推理时间
+  totalToolDuration: number // ! 工具执行总时长
+  totalLinesAdded: number // ! 代码增加行数
+  totalLinesRemoved: number // ! 代码删除行数
+  lastDuration: number | undefined  // ! 
+  modelUsage: { [modelName: string]: ModelUsage } | undefined // ! 按模型分拆的用量
 }
 
 /**
@@ -140,6 +140,11 @@ export function restoreCostStateForSession(sessionId: string): boolean {
  * Saves the current session's costs to project config.
  * Call this before switching sessions to avoid losing accumulated costs.
  */
+// 每次会话结束时保存到项目配置
+// saveCurrentSessionCosts(sessionId)
+//   → projectConfig.lastCost = totalCostUSD
+//   → projectConfig.lastSessionId = sessionId
+//   → projectConfig.lastModelUsage = modelUsage
 export function saveCurrentSessionCosts(fpsMetrics?: FpsMetrics): void {
   saveCurrentProjectConfig(current => ({
     ...current,
@@ -275,6 +280,7 @@ function addToTotalModelUsage(
   return modelUsage
 }
 
+// ! addToTotalSessionCost() 根据模型定价计算每次 API 调用的费用，累计到 totalCostUSD。按模型的 ModelUsage 支持在同一会话中切换模型后分别统计。
 export function addToTotalSessionCost(
   cost: number,
   usage: Usage,

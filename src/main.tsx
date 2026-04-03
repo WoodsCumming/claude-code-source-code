@@ -2108,6 +2108,18 @@ async function run(): Promise<CommanderCommand> {
     if (!effectiveModel && mainThreadAgentDefinition?.model && mainThreadAgentDefinition.model !== 'inherit') {
       effectiveModel = parseUserSpecifiedModel(mainThreadAgentDefinition.model);
     }
+    // /model sonnet → setMainLoopModelOverride('claude-sonnet-4-20250514')
+    //   ↓
+    // 下一次 submitMessage() 开始时：
+    //   ↓
+    // parseUserSpecifiedModel(userSpecifiedModel)
+    //   → 返回新的模型配置
+    //   ↓
+    // fetchSystemPromptParts({ mainLoopModel: newModel })
+    //   → System Prompt 根据新模型能力重新组装
+    //   ↓
+    // query({ model: newModel, messages: this.mutableMessages })
+    //   → 使用完整历史 + 新模型继续对话
     setMainLoopModelOverride(effectiveModel);
 
     // Compute resolved model for hooks (use user-specified model at launch)
@@ -3624,7 +3636,7 @@ async function run(): Promise<CommanderCommand> {
                  ├── UUID 格式 → getTranscriptPathForSession(uuid)
                  ├── .jsonl 文件路径 → 直接使用
                  └── boolean → 最近一次会话的 picker
-                 
+
               2. loadTranscriptFromFile(path)
                  ├── 按 JSONL 行解析
                  ├── 过滤出消息类型记录
