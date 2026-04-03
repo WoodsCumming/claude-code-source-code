@@ -58,6 +58,10 @@ export const onTasksUpdated = tasksUpdated.subscribe
  * Wraps emit in try/catch so listener failures never propagate to callers
  * (task mutations must succeed from the caller's perspective).
  */
+// ! 级联清理与通知
+// ! 删除 task 时自动清理所有其他任务中对该 task 的 blocks/blockedBy 引用
+// ! onTasksUpdated 信号：同进程内的订阅者（如 UI 层）立即感知任务变更
+// ! Hook 集成：TaskCreatedHook、TaskCompletedHook 在任务创建/完成时触发
 export function notifyTasksUpdated(): void {
   try {
     tasksUpdated.emit()
@@ -73,15 +77,23 @@ export const TaskStatusSchema = lazySchema(() =>
 )
 export type TaskStatus = z.infer<ReturnType<typeof TaskStatusSchema>>
 
+// ! Task 是多 Agent 协作场景下的"工作单元"。当一个 orchestrator agent 把大任务拆分给多个 worker agent 时，通过 Task 系统追踪每个子任务的状态。
+// ! Task 以 JSON 文件形式存储于 ~/.claude/config/tasks/{taskListId}/ 目录：
 export const TaskSchema = lazySchema(() =>
   z.object({
     id: z.string(),
+    // ! 简短标题
     subject: z.string(),
+    // ! 详细描述
     description: z.string(),
+    // ! 当前进行中的操作，如 "Running tests"
     activeForm: z.string().optional(), // present continuous form for spinner (e.g., "Running tests")
+    // ! 持有该任务的 agent ID
     owner: z.string().optional(), // agent ID
     status: TaskStatusSchema(),
+    // ! 本任务完成后才能开始的任务
     blocks: z.array(z.string()), // task IDs this task blocks
+    // ! 必须先完成才能开始本任务的任务
     blockedBy: z.array(z.string()), // task IDs that block this task
     metadata: z.record(z.string(), z.unknown()).optional(), // arbitrary metadata
   }),
@@ -538,6 +550,7 @@ export type ClaimTaskOptions = {
  * When checkAgentBusy is true, uses a task-list-level lock to atomically check
  * if the agent owns any other open tasks before claiming.
  */
+// ! claimTask() 实现了原子性的任务认领——多个 agent 竞争同一 task 时，只有一个能成功：
 export async function claimTask(
   taskListId: string,
   taskId: string,
@@ -555,6 +568,10 @@ export async function claimTask(
 
   // If we need to check agent busy status, use task-list-level lock
   // to prevent TOCTOU race conditions
+  // ! 多个 agent 可能同时读写 task，所有修改操作都在 proper-lockfile 的文件锁保护下执行：
+  // ! 最多重试 30 次
+  // ! 重试间隔指数退避
+  // ! create / update / delete 全部原子完成
   if (options.checkAgentBusy) {
     return claimTaskWithBusyCheck(taskListId, taskId, claimantAgentId)
   }
