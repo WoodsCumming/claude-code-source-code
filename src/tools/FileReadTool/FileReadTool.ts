@@ -544,6 +544,14 @@ export const FileReadTool = buildTool({
     // by Read). Edit/Write store offset=undefined — their readFileState
     // entry reflects post-edit mtime, so deduping against it would wrongly
     // point the model at the pre-edit Read content.
+    /**
+     * 关键设计点：
+        去重仅对 Read 工具自身的读取生效（通过 offset !== undefined 判定）
+        Edit/Write 也会写入 readFileState，但它们的 offset 为 undefined，所以不会误命中去重
+        通过 mtime 比对确保文件未被外部修改
+        有 GrowthBook killswitch（tengu_read_dedup_killswitch）可紧急关闭
+        实测数据：BQ proxy 显示约 18% 的 Read 调用是同文件碰撞，占 fleet cache_creation 的 2.64%。
+     */
     if (
       existingState &&
       !existingState.isPartialView &&
