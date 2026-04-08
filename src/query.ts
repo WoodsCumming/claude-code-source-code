@@ -102,7 +102,7 @@ import { handleStopHooks } from './query/stopHooks.js'
 import { buildQueryConfig } from './query/config.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
 import type { Terminal, Continue } from './query/transitions.js'
-import { feature } from 'bun:bundle'
+import { feature } from '../stubs/bun-bundle.js'
 import {
   getCurrentTurnTokenBudget,
   getTurnOutputTokens,
@@ -938,6 +938,27 @@ messagesForQuery（处理后的消息）→ 发往 API
               ) {
                 // ! 执行工具
                 // ! 这是工具调用系统中最精妙的部分：在 LLM 流式输出的同时，就开始并发执行工具，不等全部 tool_use block 到齐。
+                /**
+                 * 1. API 返回 tool_use block（包含 name + input）
+                      ↓
+                   2. StreamingToolExecutor.addTool() / runTools()
+                      ↓
+                   3. findToolByName() 查找工具
+                      ↓
+                   4. validateInput() — 输入校验
+                      ↓ 失败 → 返回错误 tool_result
+                   5. canUseTool() — 权限 UI（Ask 模式下弹确认）
+                      ↓ 拒绝 → 返回拒绝 tool_result
+                   6. checkPermissions() — 规则匹配
+                      ↓
+                   7. call() — 执行实际操作
+                      ↓ onProgress() 回调实时更新 UI
+                   8. 返回 ToolResult<Output>
+                      ↓
+                   9. mapToolResultToToolResultBlockParam() — 转为 API 格式
+                      ↓
+                   10. 新消息追加到对话 → 进入下一轮迭代
+                 */
                 for (const toolBlock of msgToolUseBlocks) {
                   streamingToolExecutor.addTool(toolBlock, message)
                 }

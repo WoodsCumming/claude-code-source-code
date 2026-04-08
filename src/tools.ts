@@ -270,6 +270,8 @@ export function filterToolsByDenyRules<
 }
 
 // ! **getTools(context)**：按权限规则、feature flags、运行模式过滤
+// ! 在 getAllBaseTools() 基础上应用权限过滤
+// ! 关键设计：工具列表在每次 API 调用时组装（而非全局缓存），因为 isEnabled() 的结果可能随运行时状态变化。
 export const getTools = (permissionContext: ToolPermissionContext): Tools => {
   // Simple mode: only Bash, Read, and Edit tools
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {

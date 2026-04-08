@@ -780,6 +780,7 @@ type ToolDefaults = typeof TOOL_DEFAULTS
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyToolDef = ToolDef<any, any, any>
 
+// ! 工厂函数: 大多数工具通过 buildTool() 创建（src/Tool.ts:721），它是一个类型安全的构造器：
 export function buildTool<D extends AnyToolDef>(def: D): BuiltTool<D> {
   // The runtime spread is straightforward; the `as` bridges the gap between
   // the structural-any constraint and the precise BuiltTool<D> return. The
