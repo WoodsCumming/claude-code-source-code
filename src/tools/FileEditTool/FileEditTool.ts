@@ -81,6 +81,7 @@ import {
 // ≈ 1 billion characters ≈ the runtime string limit. Multi-byte UTF-8 files
 // can be larger on disk per character, but 1 GiB is a safe byte-level guard
 // that prevents OOM without being unnecessarily restrictive.
+// ! 编辑大小限制
 const MAX_EDIT_FILE_SIZE = 1024 * 1024 * 1024 // 1 GiB (stat bytes)
 
 export const FileEditTool = buildTool({
@@ -135,6 +136,11 @@ export const FileEditTool = buildTool({
   renderToolUseRejectedMessage,
   renderToolUseErrorMessage,
   async validateInput(input: FileEditInput, toolUseContext: ToolUseContext) {
+    /**
+     * Edit 工具在 validateInput() 中检查两个条件：
+       必须先读取（readFileState 中有记录且不是局部视图）
+       文件未被外部修改（mtime 未变，或全量读取时内容完全一致）
+     */
     const { file_path, old_string, new_string, replace_all = false } = input
     // Use expandPath for consistent path normalization (especially on Windows
     // where "/" vs "\" can cause readFileState lookup mismatches)
@@ -272,6 +278,7 @@ export const FileEditTool = buildTool({
       }
     }
 
+    // ! 1. 必须先读取（readFileState 中有记录且不是局部视图）
     const readTimestamp = toolUseContext.readFileState.get(fullFilePath)
     if (!readTimestamp || readTimestamp.isPartialView) {
       return {
@@ -288,11 +295,13 @@ export const FileEditTool = buildTool({
 
     // Check if file exists and get its last modified time
     if (readTimestamp) {
+      // ! 文件未被外部修改（mtime 未变，或全量读取时内容完全一致）
       const lastWriteTime = getFileModificationTime(fullFilePath)
       if (lastWriteTime > readTimestamp.timestamp) {
         // Timestamp indicates modification, but on Windows timestamps can change
         // without content changes (cloud sync, antivirus, etc.). For full reads,
         // compare content as a fallback to avoid false positives.
+        // ! Windows 特殊处理: 内容不变，安全继续（Windows 云同步/杀毒可能改 mtime）
         const isFullRead =
           readTimestamp.offset === undefined &&
           readTimestamp.limit === undefined
@@ -313,6 +322,7 @@ export const FileEditTool = buildTool({
     const file = fileContent
 
     // Use findActualString to handle quote normalization
+    // ! AI 模型只能输出直引号（' "），但源码中可能使用弯引号（' ' " "）。findActualString() 函数处理了这个不对齐：
     const actualOldString = findActualString(file, old_string)
     if (!actualOldString) {
       return {
@@ -424,14 +434,27 @@ export const FileEditTool = buildTool({
 
     await diagnosticTracker.beforeFileEdited(absoluteFilePath)
 
+    /**
+     * Edit 工具的 call() 方法实现了一个无锁原子更新协议：
+     * 1. await fs.mkdir(dir)            ← 确保目录存在（异步，在临界区外）
+       2. await fileHistoryTrackEdit()   ← 备份旧内容（异步，在临界区外）
+       3. readFileSyncWithMetadata()     ← 同步读取当前文件内容（临界区开始）
+       4. getFileModificationTime()      ← mtime 校验
+       5. findActualString()             ← 引号标准化匹配
+       6. getPatchForEdit()              ← 计算 diff
+       7. writeTextContent()             ← 写入磁盘
+       8. readFileState.set()            ← 更新缓存（临界区结束）
+     */
     // Ensure parent directory exists before the atomic read-modify-write section.
     // These awaits must stay OUTSIDE the critical section below — a yield between
     // the staleness check and writeTextContent lets concurrent edits interleave.
+    // ! 1. await fs.mkdir(dir)            ← 确保目录存在（异步，在临界区外）
     await fs.mkdir(dirname(absoluteFilePath))
     if (fileHistoryEnabled()) {
       // Backup captures pre-edit content — safe to call before the staleness
       // check (idempotent v1 backup keyed on content hash; if staleness fails
       // later we just have an unused backup, not corrupt state).
+      // ! 2. await fileHistoryTrackEdit()   ← 备份旧内容（异步，在临界区外）
       await fileHistoryTrackEdit(
         updateFileHistoryState,
         absoluteFilePath,
@@ -441,14 +464,16 @@ export const FileEditTool = buildTool({
 
     // 2. Load current state and confirm no changes since last read
     // Please avoid async operations between here and writing to disk to preserve atomicity
+    // ! 步骤 3-8 之间不允许任何异步操作（源码注释明确写道：“Please avoid async operations between here and writing to disk to preserve atomicity”）。这确保了在 mtime 校验和实际写入之间不会有其他进程修改文件。
     const {
       content: originalFileContents,
       fileExists,
       encoding,
       lineEndings: endings,
-    } = readFileForEdit(absoluteFilePath)
+    } = readFileForEdit(absoluteFilePath) // ! 3. readFileSyncWithMetadata()     ← 同步读取当前文件内容（临界区开始）
 
     if (fileExists) {
+      // ! 4. getFileModificationTime()      ← mtime 校验
       const lastWriteTime = getFileModificationTime(absoluteFilePath)
       const lastRead = readFileState.get(absoluteFilePath)
       if (!lastRead || lastWriteTime > lastRead.timestamp) {
@@ -468,6 +493,7 @@ export const FileEditTool = buildTool({
     }
 
     // 3. Use findActualString to handle quote normalization
+    // ! 5. findActualString()             ← 引号标准化匹配
     const actualOldString =
       findActualString(originalFileContents, old_string) || old_string
 
@@ -479,6 +505,7 @@ export const FileEditTool = buildTool({
     )
 
     // 4. Generate patch
+    // ! 6. getPatchForEdit()              ← 计算 diff
     const { patch, updatedFile } = getPatchForEdit({
       filePath: absoluteFilePath,
       fileContents: originalFileContents,
@@ -488,6 +515,7 @@ export const FileEditTool = buildTool({
     })
 
     // 5. Write to disk
+    // ! 7. writeTextContent()             ← 写入磁盘
     writeTextContent(absoluteFilePath, updatedFile, encoding, endings)
 
     // Notify LSP servers about file modification (didChange) and save (didSave)
@@ -517,6 +545,7 @@ export const FileEditTool = buildTool({
     notifyVscodeFileUpdated(absoluteFilePath, originalFileContents, updatedFile)
 
     // 6. Update read timestamp, to invalidate stale writes
+    // ! 8. readFileState.set()            ← 更新缓存（临界区结束）
     readFileState.set(absoluteFilePath, {
       content: updatedFile,
       timestamp: getFileModificationTime(absoluteFilePath),
@@ -604,6 +633,7 @@ function readFileForEdit(absoluteFilePath: string): {
 } {
   try {
     // eslint-disable-next-line custom-rules/no-sync-fs
+    // ! 3. readFileSyncWithMetadata()     ← 同步读取当前文件内容（临界区开始）
     const meta = readFileSyncWithMetadata(absoluteFilePath)
     return {
       content: meta.content,
