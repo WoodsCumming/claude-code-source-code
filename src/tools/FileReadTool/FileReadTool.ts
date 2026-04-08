@@ -415,6 +415,13 @@ export const FileReadTool = buildTool({
     return ''
   },
   renderToolUseErrorMessage,
+  /**
+   * Read 工具在 validateInput() 中设置了多层安全门：
+     设备文件屏蔽（BLOCKED_DEVICE_PATHS）：/dev/zero、/dev/random、/dev/tty 等——防止无限输出或阻塞挂起
+     二进制文件拒绝（hasBinaryExtension）：排除 PDF 和图片扩展名后，阻止读取 .exe、.so 等二进制文件
+     UNC 路径跳过：Windows 下 \\server\share 路径跳过文件系统操作，防止 SMB NTLM 凭据泄露
+     权限拒绝规则（matchingRuleForInput）：匹配 deny 规则后直接拒绝
+   */
   async validateInput({ file_path, pages }, toolUseContext: ToolUseContext) {
     // Validate pages parameter (pure string parsing, no I/O)
     if (pages !== undefined) {
@@ -439,6 +446,7 @@ export const FileReadTool = buildTool({
       }
     }
 
+    // ! 权限拒绝规则（matchingRuleForInput）：匹配 deny 规则后直接拒绝
     // Path expansion + deny rule check (no I/O)
     const fullFilePath = expandPath(file_path)
 
@@ -458,6 +466,7 @@ export const FileReadTool = buildTool({
       }
     }
 
+    // ! UNC 路径跳过：Windows 下 \\server\share 路径跳过文件系统操作，防止 SMB NTLM 凭据泄露
     // SECURITY: UNC path check (no I/O) — defer filesystem operations
     // until after user grants permission to prevent NTLM credential leaks
     const isUncPath =
@@ -468,6 +477,7 @@ export const FileReadTool = buildTool({
 
     // Binary extension check (string check on extension only, no I/O).
     // PDF, images, and SVG are excluded - this tool renders them natively.
+    // ! 二进制文件拒绝（hasBinaryExtension）：排除 PDF 和图片扩展名后，阻止读取 .exe、.so 等二进制文件
     const ext = path.extname(fullFilePath).toLowerCase()
     if (
       hasBinaryExtension(fullFilePath) &&
@@ -483,6 +493,7 @@ export const FileReadTool = buildTool({
 
     // Block specific device files that would hang (infinite output or blocking input).
     // This is a path-based check with no I/O — safe special files like /dev/null are allowed.
+    // ! 设备文件屏蔽（BLOCKED_DEVICE_PATHS）：/dev/zero、/dev/random、/dev/tty 等——防止无限输出或阻塞挂起
     if (isBlockedDevicePath(fullFilePath)) {
       return {
         result: false,
@@ -622,6 +633,12 @@ export const FileReadTool = buildTool({
         const altPath = getAlternateScreenshotPath(fullFilePath)
         if (altPath) {
           try {
+            /**
+             * .ipynb  → readNotebook() → JSON cell 解析 → token 校验
+               .png/.jpg/.gif/.webp → readImageWithTokenBudget() → 压缩+降采样
+               .pdf → extractPDFPages() / readPDF() → 页面级提取
+               其他 → readFileInRange() → 分页读取
+             */
             return await callInner(
               file_path,
               fullFilePath,
@@ -644,6 +661,7 @@ export const FileReadTool = buildTool({
           }
         }
 
+        // ! 文件未找到时的智能建议: 当文件不存在时，Read 不会只报一个 “file not found”：
         const similarFilename = findSimilarFile(fullFilePath)
         const cwdSuggestion = await suggestPathUnderCwd(fullFilePath)
         let message = `File does not exist. ${FILE_NOT_FOUND_CWD_NOTE} ${getCwd()}.`
@@ -809,6 +827,12 @@ function createImageResponse(
 /**
  * Inner implementation of call, separated to allow ENOENT handling in the outer call.
  */
+/**
+ * .ipynb  → readNotebook() → JSON cell 解析 → token 校验
+   .png/.jpg/.gif/.webp → readImageWithTokenBudget() → 压缩+降采样
+   .pdf → extractPDFPages() / readPDF() → 页面级提取
+   其他 → readFileInRange() → 分页读取
+ */
 async function callInner(
   file_path: string,
   fullFilePath: string,
@@ -826,7 +850,7 @@ async function callInner(
   data: Output
   newMessages?: ReturnType<typeof createUserMessage>[]
 }> {
-  // --- Notebook ---
+  // ! --- Notebook ---
   if (ext === 'ipynb') {
     const cells = await readNotebook(resolvedFilePath)
     const cellsJson = jsonStringify(cells)
@@ -870,7 +894,7 @@ async function callInner(
     return { data }
   }
 
-  // --- Image (single read, no double-read) ---
+  // ! --- Image (single read, no double-read) ---
   if (IMAGE_EXTENSIONS.has(ext)) {
     // Images have their own size limits (token budget + compression) —
     // don't apply the text maxSizeBytes cap.
@@ -898,7 +922,7 @@ async function callInner(
     }
   }
 
-  // --- PDF ---
+  // ! --- PDF ---
   if (isPDFExtension(ext)) {
     if (pages) {
       const parsedRange = parsePDFPageRange(pages)
@@ -1024,7 +1048,7 @@ async function callInner(
     }
   }
 
-  // --- Text file (single async read via readFileInRange) ---
+  // ! --- Text file (single async read via readFileInRange) ---
   const lineOffset = offset === 0 ? 0 : offset - 1
   const { content, lineCount, totalLines, totalBytes, readBytes, mtimeMs } =
     await readFileInRange(
@@ -1101,6 +1125,14 @@ async function callInner(
  * @param filePath - Path to the image file
  * @param maxTokens - Maximum token budget for the image
  * @returns Image data with appropriate compression applied
+ */
+/**
+ * 图片路径的压缩策略特别精细：
+   先用 maybeResizeAndDownsampleImageBuffer() 标准缩放
+   用 base64.length * 0.125 估算 token 数
+   超出预算时调用 compressImageBufferWithTokenLimit() 激进压缩
+   仍然超限时用 sharp 做最后兜底：resize(400,400).jpeg({quality:20})
+   PDF 路径有页数阈值：超过 PDF_AT_MENTION_INLINE_THRESHOLD（默认值在 apiLimits.ts）时强制分页读取，每请求最多 PDF_MAX_PAGES_PER_READ 页。
  */
 export async function readImageWithTokenBudget(
   filePath: string,
