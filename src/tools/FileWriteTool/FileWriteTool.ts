@@ -307,6 +307,15 @@ export const FileWriteTool = buildTool({
     writeTextContent(fullFilePath, content, enc, 'LF')
 
     // Notify LSP servers about file modification (didChange) and save (didSave)
+    /**
+     * 
+        LSP 通知链路
+        Edit 和 Write 完成写入后都会：
+        clearDeliveredDiagnosticsForFile() — 清除旧诊断
+        lspManager.changeFile() — 通知 LSP 文件已变更
+        lspManager.saveFile() — 触发 LSP 保存事件（TypeScript server 会重新计算诊断）
+        notifyVscodeFileUpdated() — 通知 VSCode 扩展更新 diff 视图
+     */
     const lspManager = getLspServerManager()
     if (lspManager) {
       // Clear previously delivered diagnostics so new ones will be shown

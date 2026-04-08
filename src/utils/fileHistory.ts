@@ -36,8 +36,17 @@ export type FileHistoryBackup = {
   backupTime: Date
 }
 
+// ! 每次 Edit/Write 前都会调用 fileHistoryTrackEdit()，快照存储在 FileHistoryState 中
+/**
+ * 最多保留 MAX_SNAPSHOTS = 100 个快照
+   备份使用内容哈希去重（同一文件多次未变只存一份）
+   支持差异统计（DiffStats：insertions / deletions / filesChanged）
+   快照通过 recordFileHistorySnapshot() 持久化到会话存储
+ */
 export type FileHistorySnapshot = {
+  // ! 关联的助手消息 ID
   messageId: UUID // The associated message ID for this snapshot
+  // ! 文件路径 → 备份版本
   trackedFileBackups: Record<string, FileHistoryBackup> // Map of file paths to backup versions
   timestamp: Date
 }

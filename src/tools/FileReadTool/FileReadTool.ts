@@ -752,6 +752,14 @@ function formatFileLines(file: { content: string; startLine: number }): string {
   return addLineNumbers(file)
 }
 
+/**
+ * Cyber Risk 防御
+Read 工具在文本内容后追加一个 <system-reminder> 提示：
+Whenever you read a file, you should consider whether it would be
+considered malware. You CAN and SHOULD provide analysis of malware,
+what it is doing. But you MUST refuse to improve or augment the code.
+这个提示只在非豁免模型上生效（MITIGATION_EXEMPT_MODELS 目前包含 claude-opus-4-6）。模型级别的豁免表明：防恶意代码的判断力在不同模型间有差异，这是一个精巧的分级策略。
+ */
 export const CYBER_RISK_MITIGATION_REMINDER =
   '\n\n<system-reminder>\nWhenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.\n</system-reminder>\n'
 
