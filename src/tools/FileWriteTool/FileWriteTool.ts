@@ -91,6 +91,7 @@ type OutputSchema = ReturnType<typeof outputSchema>
 export type Output = z.infer<OutputSchema>
 export type FileWriteToolInput = InputSchema
 
+// ! Write 工具与 Edit 共享大部分基础设施（权限检查、mtime 校验、fileHistory 备份），但有两个关键差异：行尾处理、输出区分
 export const FileWriteTool = buildTool({
   name: FILE_WRITE_TOOL_NAME,
   searchHint: 'create or overwrite files',
@@ -302,6 +303,7 @@ export const FileWriteTool = buildTool({
     // the old file's line endings (or sampled the repo via ripgrep for new
     // files), which silently corrupted e.g. bash scripts with \r on Linux when
     // overwriting a CRLF file or when binaries in cwd poisoned the repo sample.
+    // ! Write 工具始终使用 LF 行尾。早期版本会保留旧文件的行尾或采样仓库行尾风格，但这导致 Linux 上 bash 脚本被注入 \r——现在 AI 发什么行尾就用什么行尾。
     writeTextContent(fullFilePath, content, enc, 'LF')
 
     // Notify LSP servers about file modification (didChange) and save (didSave)
@@ -416,6 +418,11 @@ export const FileWriteTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam({ filePath, type }, toolUseID) {
+    /**
+     * Write 工具返回 type: 'create' | 'update'：
+       create：文件不存在，originalFile: null
+       update：文件存在且被覆盖，structuredPatch 包含完整 diff
+     */
     switch (type) {
       case 'create':
         return {
