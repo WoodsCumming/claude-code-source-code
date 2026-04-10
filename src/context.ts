@@ -113,6 +113,7 @@ export const getGitStatus = memoize(async (): Promise<string | null> => {
 /**
  * This context is prepended to each conversation, and cached for the duration of the conversation.
  */
+// ! 缓存起来，第一次调用就是预取
 export const getSystemContext = memoize(
   async (): Promise<{
     [k: string]: string
@@ -152,6 +153,7 @@ export const getSystemContext = memoize(
 /**
  * This context is prepended to each conversation, and cached for the duration of the conversation.
  */
+// ! 用户上下文（getUserContext()）→ messages[0]
 export const getUserContext = memoize(
   async (): Promise<{
     [k: string]: string
@@ -169,6 +171,9 @@ export const getUserContext = memoize(
     // loop yields naturally at the first fs.readFile.
     const claudeMd = shouldDisableClaudeMd
       ? null
+        // ! 扫描记忆文件目录
+        // ! 过滤注入的记忆文件
+        // ! 遍历 cwd 向上读所有 
       : getClaudeMds(filterInjectedMemoryFiles(await getMemoryFiles()))
     // Cache for the auto-mode classifier (yoloClassifier.ts reads this
     // instead of importing claudemd.ts directly, which would create a

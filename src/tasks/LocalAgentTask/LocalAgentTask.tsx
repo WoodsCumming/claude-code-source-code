@@ -194,6 +194,21 @@ export function drainPendingMessages(taskId: string, getAppState: () => AppState
 /**
  * Enqueue an agent notification to the message queue.
  */
+/**
+ * 
+ * Task 通知（<task-notification>）→ messages（isMeta）
+来源： src/tasks/LocalAgentTask/LocalAgentTask.tsx:252 注入机制： enqueuePendingNotification() → 下一轮对话作为 queued_command attachment 注入
+
+<task-notification>
+  <task-id>xxx</task-id>
+  <output-file>/path/to/xxx.output</output-file>
+  <status>completed</status>
+  <summary>Agent "描述" completed</summary>
+  <result>Fork 的最终报告</result>
+  <usage>...</usage>
+</task-notification>
+以 queued_command（commandMode: 'task-notification'）的形式排队，下一轮通过 normalizeAttachmentForAPI() 转换为 user message，isMeta: true。
+ */
 export function enqueueAgentNotification({
   taskId,
   description,

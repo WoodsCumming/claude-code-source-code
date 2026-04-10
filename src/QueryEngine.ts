@@ -275,6 +275,11 @@ export class QueryEngine {
 
     const initialAppState = getAppState()
     // ! 解析模型（用户可能中途切换了模型）
+    /*
+    [Step 1] 解析模型                      QueryEngine.ts:278
+│   └─ initialMainLoopModel = parseUserSpecifiedModel(userSpecifiedModel)
+│       └─ 模型影响 getSystemPrompt() 中的知识截止日期、模型描述等
+    */
     const initialMainLoopModel = userSpecifiedModel
       ? parseUserSpecifiedModel(userSpecifiedModel)
       : getMainLoopModel()
@@ -291,11 +296,52 @@ export class QueryEngine {
       typeof customSystemPrompt === 'string' ? customSystemPrompt : undefined
     
     // ! 3. 动态组装 System Prompt（每次 turn 都重新构建）
+    /**
+     * ├─ [Step 2] ★ fetchSystemPromptParts()   QueryEngine.ts:298
+│   └─ queryContext.ts:44
+│       └─ Promise.all([                  ← 三路并行
+│             getSystemPrompt(tools, mainLoopModel, dirs, mcpClients),
+│             │   └─ prompts.ts:444
+│             │       ├─ CLAUDE_CODE_SIMPLE=1 → 返回最小化提示
+│             │       ├─ PROACTIVE/KAIROS 激活 → 返回自主 Agent 提示
+│             │       └─ 标准路径：
+│             │           ├─ [静态区块，全局可缓存]
+│             │           │   ├─ getSimpleIntroSection()      prompts.ts:175
+│             │           │   ├─ getSimpleSystemSection()     prompts.ts:186
+│             │           │   ├─ getSimpleDoingTasksSection() prompts.ts:199
+│             │           │   ├─ getActionsSection()          prompts.ts:255
+│             │           │   ├─ getUsingYourToolsSection()   prompts.ts:269
+│             │           │   ├─ getSimpleToneAndStyleSection() prompts.ts:430
+│             │           │   └─ getOutputEfficiencySection() prompts.ts:403
+│             │           │
+│             │           ├─ [SYSTEM_PROMPT_DYNAMIC_BOUNDARY] prompts.ts:114
+│             │           │
+│             │           └─ [动态区块，会话级缓存]
+│             │               ├─ getSessionSpecificGuidanceSection() prompts.ts:352
+│             │               ├─ loadMemoryPrompt()           ← 记忆指令
+│             │               ├─ getAntModelOverrideSection() prompts.ts:136
+│             │               ├─ computeSimpleEnvInfo()       prompts.ts:651
+│             │               │   └─ 包含：CWD、平台、Shell、模型名、知识截止
+│             │               ├─ getLanguageSection()         prompts.ts:142
+│             │               ├─ getOutputStyleSection()      prompts.ts:151
+│             │               ├─ getMcpInstructionsSection()  prompts.ts:160
+│             │               └─ getScratchpadInstructions()  prompts.ts:797
+│             │
+│             getUserContext(),            ← memoize 缓存命中（已在预取阶段填充）
+│             │   └─ context.ts:155
+│             │       └─ 返回 { claudeMd, currentDate }
+│             │
+│             getSystemContext()           ← memoize 缓存命中（已在预取阶段填充）
+│                 └─ context.ts:116
+│                     └─ 返回 { gitStatus, cacheBreaker? }
+│          ])
+│
+     */
     const {
       defaultSystemPrompt,
       userContext: baseUserContext,
       systemContext,
-    } = await fetchSystemPromptParts({
+    } = await fetchSystemPromptParts({  // ! 获取system prompt
       tools,
       mainLoopModel: initialMainLoopModel,
       additionalWorkingDirectories: Array.from(
@@ -305,6 +351,10 @@ export class QueryEngine {
       customSystemPrompt: customPrompt,
     })
     headlessProfilerCheckpoint('after_getSystemPrompt')
+    /**
+     * [Step 3] 合并 coordinator userContext  QueryEngine.ts:308
+│   └─ userContext = { ...baseUserContext, ...getCoordinatorUserContext() }
+     */
     const userContext = {
       ...baseUserContext,
       ...getCoordinatorUserContext(
@@ -319,11 +369,26 @@ export class QueryEngine {
     // a memory directory and needs Claude to know how to use it (which
     // Write/Edit tools to call, MEMORY.md filename, loading semantics).
     // The caller can layer their own policy text via appendSystemPrompt.
+    /**
+     * [Step 4] 条件性加载记忆机制提示         QueryEngine.ts:322
+│   └─ 仅当 customPrompt 存在 && CLAUDE_COWORK_MEMORY_PATH_OVERRIDE 设置时
+│       └─ memoryMechanicsPrompt = await loadMemoryPrompt()
+     */
     const memoryMechanicsPrompt =
       customPrompt !== undefined && hasAutoMemPathOverride()
         ? await loadMemoryPrompt()
         : null
 
+    /**
+     * [Step 5] ★ 组装最终 systemPrompt       QueryEngine.ts:327
+│   └─ systemPrompt = asSystemPrompt([
+│         ...(customPrompt !== undefined ? [customPrompt] : defaultSystemPrompt),
+│         ...(memoryMechanicsPrompt ? [memoryMechanicsPrompt] : []),
+│         ...(appendSystemPrompt ? [appendSystemPrompt] : []),
+│       ])
+│       注：此处是 SDK/print 模式的路径
+│       交互模式使用 buildEffectiveSystemPrompt()（见阶段六）
+     */
     const systemPrompt = asSystemPrompt([
       ...(customPrompt !== undefined ? [customPrompt] : defaultSystemPrompt),
       ...(memoryMechanicsPrompt ? [memoryMechanicsPrompt] : []),
@@ -419,6 +484,15 @@ export class QueryEngine {
       allowedTools,
       model: modelFromUserInput,
       resultText,
+      /**
+       * [Step 6] processUserInput()            QueryEngine.ts:422
+│   └─ processUserInput.ts:85
+│       └─ getAttachmentMessages(input, context, ...)
+│           └─ attachments.ts:2937
+│               └─ getAttachments()       attachments.ts:743
+│                   ├─ [用户输入触发] @文件、MCP资源、skill_discovery
+│                   └─ [线程级] queued_command、todo_reminder、
+       */
     } = await processUserInput({
       input: prompt,
       mode: 'prompt',
@@ -679,6 +753,18 @@ export class QueryEngine {
       : 0
 
     // ! 5. 调用核心 query() 函数执行 agentic loop
+    /**
+     * [Step 7] query(params)                 query.ts:219
+    └─ 进入查询循环（见文档08的详细分析）
+        ├─ fullSystemPrompt = appendSystemContext(systemPrompt, systemContext)
+        │   └─ api.ts:437  [...systemPrompt, "gitStatus: ...\n..."]
+        └─ callModel({
+              messages: prependUserContext(messagesForQuery, userContext),
+              │         └─ api.ts:449  messages[0] = <system-reminder>claudeMd+date</system-reminder>
+              systemPrompt: fullSystemPrompt,
+           })
+           └─ claude.ts（最终 API 请求构建，见文档08的§5.5）
+     */
     for await (const message of query({
       messages,
       systemPrompt,

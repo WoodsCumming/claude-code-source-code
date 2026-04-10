@@ -3487,6 +3487,7 @@ export function REPL({
 
     // Ensure SessionStart hook context is available before the first API call.
     await awaitPendingHooks();
+    // ! 用户在 REPL 中输入后，触发 handlePromptSubmit()，最终调用 QueryEngine.ask()。
     await handlePromptSubmit({
       input,
       helpers,

@@ -466,6 +466,7 @@ messagesForQuery（处理后的消息）→ 发往 API
       messagesForQuery = collapseResult.messages
     }
 
+    // ! system prompt 注入点：来源： src/context.ts:116 注入点： src/query.ts:470 appendSystemContext(systemPrompt, systemContext)
     const fullSystemPrompt = asSystemPrompt(
       appendSystemContext(systemPrompt, systemContext),
     )
@@ -717,6 +718,7 @@ messagesForQuery（处理后的消息）→ 发往 API
           queryCheckpoint('query_api_streaming_start')
           // ! 4. 调用 LLM API（流式）
           for await (const message of deps.callModel({
+            // ! 用户上下文（getUserContext()）→ messages[0]来源： src/context.ts:155 注入点： src/query.ts:720 → prependUserContext(messagesForQuery, userContext)
             messages: prependUserContext(messagesForQuery, userContext),
             systemPrompt: fullSystemPrompt,
             thinkingConfig: toolUseContext.options.thinkingConfig,

@@ -2143,6 +2143,8 @@ function runHeadlessStreaming(
           // const-capture: TS loses `while ((command = dequeue()))` narrowing
           // inside the closure.
           const cmd = command
+          // ! 用户在 REPL 中输入后，触发 handlePromptSubmit()，最终调用 QueryEngine.ask()。
+          // ! ask() 是 QueryEngine.ask() 的别名（print.ts:91 import { ask } from 'src/QueryEngine.js'）。
           await runWithWorkload(cmd.workload ?? options.workload, async () => {
             for await (const message of ask({
               commands: uniqBy(

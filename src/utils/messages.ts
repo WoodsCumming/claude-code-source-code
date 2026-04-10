@@ -3452,6 +3452,46 @@ function getAutoModeSparseInstructions(): UserMessage[] {
 
 export function normalizeAttachmentForAPI(
   attachment: Attachment,
+  /**
+   * 文件类 Attachments
+      Attachment类型	转换为	行号
+      file（图片）	[tool_use(Read), tool_result(image)]	messages.ts:3549
+      file（文本）	[tool_use(Read), tool_result(text), ?truncation_notice]	messages.ts:3557
+      file（notebook）	[tool_use(Read), tool_result(notebook)]	messages.ts:3573
+      file（PDF）	[tool_use(Read), tool_result(pdf)]	messages.ts:3582
+      directory	[tool_use(Bash, ls), tool_result(listing)]	messages.ts:3526
+      compact_file_reference	文件过大提示 user message	messages.ts:3593
+      pdf_reference	PDF 大文件使用说明 user message	messages.ts:3601
+      edited_text_file	文件被修改通知 user message	messages.ts:3539
+
+      IDE 集成 Attachments
+        Attachment 类型	内容	行号
+        selected_lines_in_ide	用户在 IDE 中选中的代码行	messages.ts:3613
+        opened_file_in_ide	用户在 IDE 中打开的文件	messages.ts:3629
+      
+      计划与技能 Attachments
+        Attachment 类型	内容	行号
+        plan_file_reference	Plan 模式下的计划文件内容	messages.ts:3637
+        invoked_skills	本会话中已调用的 skill 内容（用于续传）	messages.ts:3644
+        skill_listing	可用 skill 列表	messages.ts:3732
+        skill_discovery	与当前任务相关的技能推荐（EXPERIMENTAL_SKILL_SEARCH）	messages.ts:3507
+
+      任务管理 Attachments
+        Attachment 类型	内容	行号
+        todo_reminder	TodoWrite 工具使用提醒 + 当前 todo 列表	messages.ts:3663
+        task_reminder	Task 工具使用提醒 + 当前任务列表	messages.ts:3680
+        queued_command	队列中的命令（含 task-notification）	messages.ts:3739
+        记忆 Attachments
+        Attachment 类型	内容	行号
+        nested_memory	嵌套记忆文件内容（<system-reminder> 包裹）	messages.ts:3700
+        relevant_memories	与当前任务相关的记忆文件内容	messages.ts:3708
+        多 Agent 协作 Attachments（功能门控）
+        Attachment 类型	内容	条件
+        teammate_mailbox	队友发来的消息	isAgentSwarmsEnabled()
+        team_context	团队协作上下文（团队名、身份、任务列表路径）	isAgentSwarmsEnabled()
+        agent_listing_delta	Agent 类型列表增量更新	messages.ts:4194
+        mcp_instructions_delta	MCP 服务器指令增量更新	messages.ts:4216
+   */
 ): UserMessage[] {
   if (isAgentSwarmsEnabled()) {
     if (attachment.type === 'teammate_mailbox') {

@@ -385,6 +385,14 @@ function prefetchSystemContextIfSafe(): void {
  * spawning during the critical startup path.
  * Call this after the REPL has been rendered.
  */
+// !
+/**
+getUserContext() 和 getSystemContext() 都是 memoize 包装的，即：
+
+第一次调用触发实际 I/O（git 命令、文件读取）
+后续调用直接返回缓存结果
+这两个函数在 startDeferredPrefetches() 中被预热，使得首次 turn 时的 fetchSystemPromptParts() 几乎是零延迟的缓存命中
+*/
 export function startDeferredPrefetches(): void {
   // This function runs after first render, so it doesn't block the initial paint.
   // However, the spawned processes and async work still contend for CPU and event
@@ -403,6 +411,19 @@ export function startDeferredPrefetches(): void {
   // Process-spawning prefetches (consumed at first API call, user is still typing)
   void initUser();
   void getUserContext();
+  // !
+  /**
+prefetchSystemContextIfSafe()          main.tsx:406
+│   └─ main.tsx:360  prefetchSystemContextIfSafe()
+│       ├─ 非交互模式 → 直接调用 void getSystemContext()
+│       ├─ 交互模式 + 已信任 → void getSystemContext()
+│       │   └─ context.ts:116  getSystemContext()（memoize）
+│       │       ├─ 若已被 main.tsx:1977 预热 → 直接返回缓存
+│       │       └─ 否则：
+│       │           ├─ getGitStatus()      ← git status + git log + git branch
+│       │           └─ 返回 { gitStatus: string }
+│       └─ 交互模式 + 未信任 → 跳过（等信任建立后再调用）
+  */
   prefetchSystemContextIfSafe();
   void getRelevantTips();
   if (isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) && !isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)) {
@@ -414,6 +435,7 @@ export function startDeferredPrefetches(): void {
   void countFilesRoundedRg(getCwd(), AbortSignal.timeout(3000), []);
 
   // Analytics and feature flag initialization
+  // ! GrowthBook 初始化（影响功能标志）
   void initializeAnalyticsGates();
   void prefetchOfficialMcpUrls();
   void refreshModelCapabilities();
@@ -1340,6 +1362,12 @@ async function run(): Promise<CommanderCommand> {
     }
 
     // Handle system prompt options
+    /**
+     * main.tsx:1343  let systemPrompt = options.systemPrompt
+    ├─ --system-prompt <prompt>    → 完全替换默认系统提示
+    ├─ --system-prompt-file <file> → 从文件读取替换
+    └─ --append-system-prompt      → 追加到默认系统提示末尾
+     */
     let systemPrompt = options.systemPrompt;
     if (options.systemPromptFile) {
       if (options.systemPrompt) {
@@ -1974,12 +2002,15 @@ async function run(): Promise<CommanderCommand> {
       // a cache hit. The microtask from await getIsGit() drains at the
       // getCommands Promise.all await below. Trust is implicit in -p mode
       // (same gate as prefetchSystemContextIfSafe).
+      // ! 这段代码实际上已经是函数调用，并不是函数声明。具体来说，这段代码中使用了 void 操作符，用于忽略函数的返回值。
+      // ! 预取
       void getSystemContext();
       // Kick getUserContext now too — its first await (fs.readFile in
       // getMemoryFiles) yields naturally, so the CLAUDE.md directory walk
       // runs during the ~280ms overlap window before the context
       // Promise.all join in print.ts. The void getUserContext() in
       // startDeferredPrefetches becomes a memoize cache-hit.
+      // ! 预取
       void getUserContext();
       // Kick ensureModelStringsInitialized now — for Bedrock this triggers
       // a 100-200ms profile fetch that was awaited serially at
@@ -2026,6 +2057,14 @@ async function run(): Promise<CommanderCommand> {
     const commandsStart = Date.now();
     // Join the promises kicked before setup() (or start fresh if
     // worktreeEnabled gated the early kick). Both memoized by cwd.
+    // !
+    /**
+        并行预加载（阻塞，在 trust 对话框之前）
+    main.tsx:2029  await Promise.all([
+        // ! commandsPromise ?? getCommands(currentCwd),           ← 加载 slash commands
+        // ! agentDefsPromise ?? getAgentDefinitionsWithOverrides() ← 加载 agent 定义
+])
+    */
     const [commands, agentDefinitionsResult] = await Promise.all([commandsPromise ?? getCommands(currentCwd), agentDefsPromise ?? getAgentDefinitionsWithOverrides(currentCwd)]);
     logForDebugging(`[STARTUP] Commands and agents loaded in ${Date.now() - commandsStart}ms`);
     profileCheckpoint('action_commands_loaded');
@@ -2081,10 +2120,11 @@ async function run(): Promise<CommanderCommand> {
 
     // Apply the agent's system prompt for non-interactive sessions
     // (interactive mode uses buildEffectiveSystemPrompt instead)
+    // ! main.tsx:2084  非交互模式 + 自定义 agent 的系统提示处理
     if (isNonInteractiveSession && mainThreadAgentDefinition && !systemPrompt && !isBuiltInAgent(mainThreadAgentDefinition)) {
       const agentSystemPrompt = mainThreadAgentDefinition.getSystemPrompt();
       if (agentSystemPrompt) {
-        systemPrompt = agentSystemPrompt;
+        systemPrompt = agentSystemPrompt; // ! agent 系统提示覆盖默认值
       }
     }
 
@@ -2212,6 +2252,7 @@ async function run(): Promise<CommanderCommand> {
       /* eslint-disable @typescript-eslint/no-require-imports */
       const briefVisibility = feature('KAIROS') || feature('KAIROS_BRIEF') ? (require('./tools/BriefTool/BriefTool.js') as typeof import('./tools/BriefTool/BriefTool.js')).isBriefEnabled() ? 'Call SendUserMessage at checkpoints to mark where things stand.' : 'The user will see any text you output.' : 'The user will see any text you output.';
       /* eslint-enable @typescript-eslint/no-require-imports */
+      // ! Proactive 模式追加
       const proactivePrompt = `\n# Proactive Mode\n\nYou are in proactive mode. Take initiative — explore, act, and make progress without waiting for instructions.\n\nStart by briefly greeting the user.\n\nYou will receive periodic <tick> prompts. These are check-ins. Do whatever seems most useful, or call Sleep if there's nothing to do. ${briefVisibility}`;
       appendSystemPrompt = appendSystemPrompt ? `${appendSystemPrompt}\n\n${proactivePrompt}` : proactivePrompt;
     }
@@ -2250,6 +2291,12 @@ async function run(): Promise<CommanderCommand> {
       });
       logForDebugging('[STARTUP] Running showSetupScreens()...');
       const setupScreensStart = Date.now();
+      // !
+      /**
+       * main.tsx:2253  await showSetupScreens(root, permissionMode, ...)
+    └─ 显示信任对话框，等待用户确认
+    └─ 信任确认后，getSystemContext() 才被允许（git 命令安全）
+       */
       const onboardingShown = await showSetupScreens(root, permissionMode, allowDangerouslySkipPermissions, commands, enableClaudeInChrome, devChannels);
       logForDebugging(`[STARTUP] showSetupScreens() completed in ${Date.now() - setupScreensStart}ms`);
 
@@ -2826,6 +2873,8 @@ async function run(): Promise<CommanderCommand> {
       // cleanupOldMessageFiles) and sdkHeapDumpMonitor are all bookkeeping
       // that scripted calls don't need — the next interactive session reconciles.
       if (!isBareMode()) {
+        // ! 在 REPL 首次渲染后调用（不阻塞首次渲染）：
+        // ! 预取/预热
         startDeferredPrefetches();
         void import('./utils/backgroundHousekeeping.js').then(m => m.startBackgroundHousekeeping());
         if ("external" === 'ant') {

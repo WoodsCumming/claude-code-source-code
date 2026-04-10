@@ -1335,6 +1335,7 @@ async function* queryModel(
       .join('\n')
     if (deferredToolList) {
       messagesForAPI = [
+        // ! // 当 tool search 启用时，将可用工具列表注入为合成 user message
         createUserMessage({
           content: `<available-deferred-tools>\n${deferredToolList}\n</available-deferred-tools>`,
           isMeta: true,
@@ -1357,12 +1358,13 @@ async function* queryModel(
   // filter(Boolean) works by converting each element to a boolean - empty strings become false and are filtered out.
   systemPrompt = asSystemPrompt(
     [
-      getAttributionHeader(fingerprint),
-      getCLISyspromptPrefix({
+      getAttributionHeader(fingerprint),  // ! // 归因头（cc_version, cc_entrypoint）
+      // ! 身份前缀（getCLISyspromptPrefix()）
+      getCLISyspromptPrefix({             // ! // "You are Claude Code..."
         isNonInteractive: options.isNonInteractiveSession,
         hasAppendSystemPrompt: options.hasAppendSystemPrompt,
       }),
-      ...systemPrompt,
+      ...systemPrompt,                    // ! // 主系统提示内容
       ...(advisorModel ? [ADVISOR_TOOL_INSTRUCTIONS] : []),
       ...(injectChromeHere ? [CHROME_TOOL_SEARCH_INSTRUCTIONS] : []),
     ].filter(Boolean),
@@ -1696,6 +1698,20 @@ async function* queryModel(
 
     lastRequestBetas = betasParams
 
+    /**
+     * src/services/api/claude.ts:1699 最终发出的 API 请求结构：
+
+        anthropic.beta.messages.create({
+          model: ...,
+          system: buildSystemPromptBlocks(systemPrompt, ...),  // system[] 数组
+          messages: addCacheBreakpoints(
+            prependUserContext(messagesForQuery, userContext),   // messages[] 数组
+            ...
+          ),
+          tools: allTools,
+          ...
+        })
+     */
     return {
       model: normalizeModelStringForAPI(options.model),
       messages: addCacheBreakpoints(

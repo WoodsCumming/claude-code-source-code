@@ -38,13 +38,58 @@ function isProactiveActive_SAFE_TO_CALL_ANYWHERE(): boolean {
  *
  * Plus appendSystemPrompt is always added at the end if specified (except when override is set).
  */
+// ! 在交互模式中，每次 turn 开始时，REPL 通过此函数决定最终使用哪个系统提示：
 export function buildEffectiveSystemPrompt({
-  mainThreadAgentDefinition,
+  mainThreadAgentDefinition,  // ! 当前激活的 agent 定义（可能为 undefined）
   toolUseContext,
-  customSystemPrompt,
-  defaultSystemPrompt,
-  appendSystemPrompt,
-  overrideSystemPrompt,
+  customSystemPrompt, // ! --system-prompt 参数（可能为 undefined）
+  defaultSystemPrompt,  // ! getSystemPrompt() 的结果
+  appendSystemPrompt, // ! --append-system-prompt 参数
+  overrideSystemPrompt, // ! 
+  /**
+  循环模式覆盖（可能为 null）
+})
+│
+├─ [优先级 0] overrideSystemPrompt 存在                  systemPrompt.ts:56
+│   └─ return asSystemPrompt([overrideSystemPrompt])
+│       └─ 完全替换，用于 loop 模式等特殊场景
+│
+├─ [优先级 1] feature('COORDINATOR_MODE') 且环境变量激活  systemPrompt.ts:62
+│   └─ return asSystemPrompt([
+│         getCoordinatorSystemPrompt(),   coordinatorMode.ts:111
+│         appendSystemPrompt?,
+│       ])
+│
+├─ [优先级 2] mainThreadAgentDefinition 存在              systemPrompt.ts:77
+│   ├─ isBuiltInAgent → getSystemPrompt({ toolUseContext }) ← 内置 agent（需要 context）
+│   └─ 自定义 agent → getSystemPrompt()                    ← 自定义 agent（无参数）
+│
+│   ├─ [子情况] Proactive/KAIROS 激活时                    systemPrompt.ts:103
+│   │   └─ return asSystemPrompt([
+│   │         ...defaultSystemPrompt,
+│   │         `\n# Custom Agent Instructions\n${agentSystemPrompt}`,
+│   │         appendSystemPrompt?,
+│   │       ])
+│   │       ← agent 指令追加到默认提示（不替换）
+│   │
+│   └─ [子情况] 普通 agent                                 systemPrompt.ts:115
+│       └─ return asSystemPrompt([
+│             agentSystemPrompt,          ← agent 提示替换默认提示
+│             appendSystemPrompt?,
+│           ])
+│
+├─ [优先级 3] customSystemPrompt 存在（--system-prompt）   systemPrompt.ts:115
+│   └─ return asSystemPrompt([
+│         customSystemPrompt,             ← 用户自定义提示替换默认提示
+│         appendSystemPrompt?,
+│       ])
+│
+└─ [优先级 4] 默认路径                                     systemPrompt.ts:115
+    └─ return asSystemPrompt([
+          ...defaultSystemPrompt,         ← getSystemPrompt() 的完整结果
+          appendSystemPrompt?,
+        ])
+  */
 }: {
   mainThreadAgentDefinition: AgentDefinition | undefined
   toolUseContext: Pick<ToolUseContext, 'options'>

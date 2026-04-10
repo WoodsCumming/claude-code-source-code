@@ -543,6 +543,21 @@ export async function* runAgent({
   }
 
   // Add SubagentStart hook context as a user message (consistent with SessionStart/UserPromptSubmit)
+  /**
+   * Hook 上下文（SubagentStart/UserPromptSubmit）→ messages（isMeta）
+来源： src/tools/AgentTool/runAgent.ts:546
+
+if (additionalContexts.length > 0) {
+  const contextMessage = createAttachmentMessage({
+    type: 'hook_additional_context',
+    content: additionalContexts,
+    hookName: 'SubagentStart',
+    ...
+  })
+  initialMessages.push(contextMessage)
+}
+用户配置的 hooks（如 UserPromptSubmit、SubagentStart）返回的附加上下文，以 <system-reminder> 包裹注入 user messages。
+   */
   if (additionalContexts.length > 0) {
     const contextMessage = createAttachmentMessage({
       type: 'hook_additional_context',

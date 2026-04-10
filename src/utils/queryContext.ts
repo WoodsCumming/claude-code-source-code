@@ -58,7 +58,7 @@ export async function fetchSystemPromptParts({
   userContext: { [k: string]: string }
   systemContext: { [k: string]: string }
 }> {
-  const [defaultSystemPrompt, userContext, systemContext] = await Promise.all([
+  const [defaultSystemPrompt, userContext, systemContext] = await Promise.all([ // ! 三路并行
     customSystemPrompt !== undefined
       ? Promise.resolve([])
       : getSystemPrompt(
