@@ -447,12 +447,20 @@ export async function getSystemPrompt(
   additionalWorkingDirectories?: string[],
   mcpClients?: MCPServerConnection[],
 ): Promise<string[]> {
+  // ! L450 检查 CLAUDE_CODE_SIMPLE → 返回最小化 prompt
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     return [
       `You are Claude Code, Anthropic's official CLI for Claude.\n\nCWD: ${getCwd()}\nDate: ${getSessionStartDate()}`,
     ]
   }
 
+  // ! 标准路径（L456）
+  /**
+   * 并行执行（L457）：
+        │   ├─ getSkillToolCommands(cwd)
+        │   ├─ getOutputStyleConfig()
+        │   └─ computeSimpleEnvInfo(model)          prompts.ts:651
+   */
   const cwd = getCwd()
   const [skillToolCommands, outputStyleConfig, envInfo] = await Promise.all([
     getSkillToolCommands(cwd),
@@ -463,6 +471,7 @@ export async function getSystemPrompt(
   const settings = getInitialSettings()
   const enabledTools = new Set(tools.map(_ => _.name))
 
+  // ! L468 检查 PROACTIVE/KAIROS 激活 → 返回自主 Agent prompt
   if (
     (feature('PROACTIVE') || feature('KAIROS')) &&
     proactiveModule?.isProactiveActive()
@@ -488,7 +497,20 @@ ${CYBER_RISK_INSTRUCTION}`,
     ].filter(s => s !== null)
   }
 
+  /**
+   * 构建动态区块（会话级缓存，L491）：
+            ├─ getSessionSpecificGuidanceSection()   prompts.ts:352
+            ├─ loadMemoryPrompt()
+            ├─ getAntModelOverrideSection()          prompts.ts:136
+            ├─ computeSimpleEnvInfo()                prompts.ts:651
+            ├─ getLanguageSection()                  prompts.ts:142
+            ├─ getOutputStyleSection()               prompts.ts:151
+            ├─ getMcpInstructionsSection()           prompts.ts:160（或通过 delta 注入）
+            ├─ getScratchpadInstructions()           prompts.ts:797
+            └─ getFunctionResultClearingSection()    prompts.ts:821
+   */
   const dynamicSections = [
+    // ! systemPromptSection(name, fn)：标准缓存，在 /clear 或 /compact 之前保持稳定
     systemPromptSection('session_guidance', () =>
       getSessionSpecificGuidanceSection(enabledTools, skillToolCommands),
     ),
@@ -510,6 +532,7 @@ ${CYBER_RISK_INSTRUCTION}`,
     // per-turn recompute, which busts the prompt cache on late MCP connect.
     // Gate check inside compute (not selecting between section variants)
     // so a mid-session gate flip doesn't read a stale cached value.
+    // ! DANGEROUS_uncachedSystemPromptSection(name, fn, reason)：每次都重新计算，用于会话间可能变化的内容（如 MCP 服务器连接/断开）
     DANGEROUS_uncachedSystemPromptSection(
       'mcp_instructions',
       () =>
@@ -558,6 +581,16 @@ ${CYBER_RISK_INSTRUCTION}`,
     await resolveSystemPromptSections(dynamicSections)
 
   return [
+    /**
+     * 构建静态区块（全局缓存，L560）：
+        │   ├─ getSimpleIntroSection()               prompts.ts:175
+        │   ├─ getSimpleSystemSection()              prompts.ts:186
+        │   ├─ getSimpleDoingTasksSection()          prompts.ts:199
+        │   ├─ getActionsSection()                   prompts.ts:255
+        │   ├─ getUsingYourToolsSection()            prompts.ts:269
+        │   ├─ getSimpleToneAndStyleSection()        prompts.ts:430
+        │   └─ getOutputEfficiencySection()          prompts.ts:403
+     */
     // --- Static content (cacheable) ---
     getSimpleIntroSection(outputStyleConfig),
     getSimpleSystemSection(),
@@ -570,6 +603,7 @@ ${CYBER_RISK_INSTRUCTION}`,
     getSimpleToneAndStyleSection(),
     getOutputEfficiencySection(),
     // === BOUNDARY MARKER - DO NOT MOVE OR REMOVE ===
+    // ! [SYSTEM_PROMPT_DYNAMIC_BOUNDARY]          prompts.ts:114
     ...(shouldUseGlobalCacheScope() ? [SYSTEM_PROMPT_DYNAMIC_BOUNDARY] : []),
     // --- Dynamic content (registry-managed) ---
     ...resolvedDynamicSections,
