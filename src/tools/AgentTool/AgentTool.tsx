@@ -236,6 +236,7 @@ export const AgentTool = buildTool({
   get outputSchema(): OutputSchema {
     return outputSchema();
   },
+  // ! SubAgent 的执行核心在 runAgent() 函数（src/tools/AgentTool/runAgent.ts:248），由 AgentTool.tsx 的 call() 方法调用。
   async call({
     prompt,
     subagent_type,
@@ -554,6 +555,7 @@ export const AgentTool = buildTool({
 
     // Fork subagent experiment: force ALL spawns async for a unified
     // <task-notification> interaction model (not just fork spawns — all of them).
+    // ! // Fork 实验：强制全部异步
     const forceAsync = isForkSubagentEnabled();
 
     // Assistant mode: force all agents async. Synchronous subagents hold the
@@ -565,6 +567,36 @@ export const AgentTool = buildTool({
     // below (registerAsyncAgentTask + notifyOnCompletion).
     const assistantForceAsync = feature('KAIROS') ? appState.kairosEnabled : false;
     const shouldRunAsync = (run_in_background === true || selectedAgent.background === true || isCoordinator || forceAsync || assistantForceAsync || (proactiveModule?.isProactiveActive() ?? false)) && !isBackgroundTasksDisabled;
+    /**
+     * // AgentTool.tsx:557-567
+    const forceAsync = isForkSubagentEnabled()  // ! Fork 实验：强制全部异步
+
+    const shouldRunAsync = (
+      run_in_background === true ||       // ! 用户显式指定
+      selectedAgent.background === true || // ! Agent 定义要求后台
+      isCoordinator ||                     // ! 协调者模式
+      forceAsync ||                        // ! Fork 实验开启
+      assistantForceAsync ||               // ! KAIROS 模式
+      (proactiveModule?.isProactiveActive() ?? false)
+    ) && !isBackgroundTasksDisabled
+
+    同步 SubAgent 特点
+    isAsync = false
+    父 Agent 阻塞等待 SubAgent 完成
+    共享父的 setAppState（可更新 UI）
+    共享父的 abortController（ESC 立即取消）
+    可以显示权限提示对话框（shouldAvoidPermissionPrompts = false）
+    不生成 <task-notification>，直接返回结果
+
+    异步 SubAgent 特点
+    isAsync = true
+    父 Agent 立即返回，SubAgent 后台运行
+    setAppState 是 no-op（不能更新父 UI）
+    新建 AbortController（不链接父，ESC 不取消）
+    不弹权限对话框（shouldAvoidPermissionPrompts = true）
+    完成后通过 <task-notification> XML 通知父 Agent
+    工具池受 ASYNC_AGENT_ALLOWED_TOOLS 限制
+     */
     // Assemble the worker's tool pool independently of the parent's.
     // Workers always get their tools from assembleToolPool with their own
     // permission mode, so they aren't affected by the parent's tool

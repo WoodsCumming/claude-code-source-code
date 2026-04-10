@@ -245,6 +245,48 @@ function isRecordableMessage(
   )
 }
 
+// !
+/**
+ *  参数差异
+参数	SubAgent	ForkAgent
+forkContextMessages	undefined	父 Agent 的完整消息历史
+useExactTools	undefined（false）	true
+override.systemPrompt	undefined（自行构建）	父 Agent 的渲染字节
+availableTools	workerTools（重新组装）	toolUseContext.options.tools（父工具池）
+model	可指定（AgentTool.tsx:610 传入）	undefined（继承父模型）
+isAsync	可同步可异步	强制 true 
+ */
+/**
+ * 
+ * SubAgent vs ForkAgent 全面对比
+    维度	SubAgent	ForkAgent
+    触发方式	Agent(subagent_type="xxx") 显式指定	Agent() 省略 subagent_type（功能门控开）
+    消息历史	从零开始，只有用户 prompt	继承父 Agent 的完整对话历史
+    系统提示	getAgentSystemPrompt()（Agent 自己的提示 + 环境信息）	父 Agent 的渲染字节（字节精确，保证 cache hit）
+    提示类型	完整背景说明（需解释任务背景）	指令式（<fork-boilerplate> + directive）
+    工具池	resolveAgentTools()（过滤 + 黑/白名单）	useExactTools=true（父工具池直接引用）
+    模型	可指定不同模型（model 字段）	强制 'inherit'（继承父模型）
+    thinking 配置	禁用（{ type: 'disabled' }）	继承父配置（保证 cache hit）
+    文件状态缓存	全新缓存（createFileStateCacheWithSizeLimit）	克隆父缓存（保证相同 replacement 决策）
+    CLAUDE.md	重新获取（Explore/Plan 可省略）	通过继承的系统提示已包含
+    gitStatus	重新获取（Explore/Plan 省略）	通过继承的系统提示已包含
+    执行方式	可同步（阻塞父）或异步（后台）	强制异步（forceAsync = true）
+    AbortController	同步：共享父；异步：新建不链接	新建不链接父（后台独立运行）
+    setAppState	同步：共享父；异步：no-op	始终 no-op
+    权限提示	同步：可弹窗；异步：不弹窗	'bubble' 模式：冒泡到父终端
+    allowedTools	可通过 allowedTools 参数限制工具权限	不支持
+    SubagentStart hooks	支持（执行用户配置的 hooks）	不支持
+    frontmatter hooks	支持（Agent 定义中的 hooks）	不支持
+    skills 预加载	支持（frontmatter skills 字段）	不支持
+    Agent 专属 MCP	支持（frontmatter mcpServers 字段）	不支持（继承父工具池）
+    Prompt Cache	独立缓存，无法复用父缓存	字节相同 → 命中父缓存
+    querySource	不写入 options	写入 options（防递归 fork 检测）
+    递归防护	ALL_AGENT_DISALLOWED_TOOLS（外部用户禁止 AgentTool）	双重检测：querySource + <fork-boilerplate> 标签扫描
+    完成通知	同步：直接返回；异步：<task-notification> XML	始终 <task-notification> XML
+    资源清理	完整清理（MCP、hooks、缓存、todos、bash 任务）	相同（通过同一 finally 块）
+    transcript 记录	recordSidechainTranscript()（每条消息）	相同
+    maxTurns	agentDefinition.maxTurns（可配置）	200（硬编码）
+ */
 export async function* runAgent({
   agentDefinition,
   promptMessages,
@@ -368,18 +410,21 @@ export async function* runAgent({
   // Handle message forking for context sharing
   // Filter out incomplete tool calls from parent messages to avoid API errors
   const contextMessages: Message[] = forkContextMessages
-    ? filterIncompleteToolCalls(forkContextMessages)
-    : []
+    ? filterIncompleteToolCalls(forkContextMessages)  // ! // ForkAgent：过滤父历史
+    : []  // ! // SubAgent：空数组
   const initialMessages: Message[] = [...contextMessages, ...promptMessages]
+  // ! SubAgent：   initialMessages = [用户 prompt 消息]
+  // ! ForkAgent：  initialMessages = [父历史..., assistant(tool_uses), user(placeholders + directive)]
 
   const agentReadFileState =
     forkContextMessages !== undefined
-      ? cloneFileStateCache(toolUseContext.readFileState)
-      : createFileStateCacheWithSizeLimit(READ_FILE_STATE_CACHE_SIZE)
+      ? cloneFileStateCache(toolUseContext.readFileState) // ! // ForkAgent：克隆父缓存
+      : createFileStateCacheWithSizeLimit(READ_FILE_STATE_CACHE_SIZE) // ! // SubAgent：全新缓存
+  // ! SubAgent 使用全新的文件状态缓存，不继承父 Agent 的文件读取历史。这意味着 SubAgent 看到的文件内容与父 Agent 独立，不会受父 Agent 已读文件的影响。
 
   const [baseUserContext, baseSystemContext] = await Promise.all([
-    override?.userContext ?? getUserContext(),
-    override?.systemContext ?? getSystemContext(),
+    override?.userContext ?? getUserContext(),  // ! // 重新获取 CLAUDE.md
+    override?.systemContext ?? getSystemContext(),  // ! 重新获取 git status
   ])
 
   // Read-only agents (Explore, Plan) don't act on commit/PR/lint rules from
@@ -387,6 +432,7 @@ export async function* runAgent({
   // Dropping claudeMd here saves ~5-15 Gtok/week across 34M+ Explore spawns.
   // Explicit override.userContext from callers is preserved untouched.
   // Kill-switch defaults true; flip tengu_slim_subagent_claudemd=false to revert.
+  // ! // Explore/Plan：省略 CLAUDE.md（节省 ~5-15 Gtok/week）
   const shouldOmitClaudeMd =
     agentDefinition.omitClaudeMd &&
     !override?.userContext &&
@@ -403,11 +449,16 @@ export async function* runAgent({
   // Saves ~1-3 Gtok/week fleet-wide.
   const { gitStatus: _omittedGitStatus, ...systemContextNoGit } =
     baseSystemContext
+  // ! // Explore/Plan：省略 gitStatus（节省 ~1-3 Gtok/week）
   const resolvedSystemContext =
     agentDefinition.agentType === 'Explore' ||
     agentDefinition.agentType === 'Plan'
       ? systemContextNoGit
       : baseSystemContext
+  /**
+   * SubAgent 重新调用 getUserContext() 和 getSystemContext()（两者都是 memoize，实际上是缓存命中），但 Explore/Plan 等只读 Agent 会主动省略 CLAUDE.md 和 gitStatus，避免浪费 token。
+   * ForkAgent 通过 override.systemPrompt（父渲染字节）已经包含了 userContext 和 systemContext 的内容，不需要重新获取。
+   */
 
   // Override permission mode if agent defines one
   // However, don't override if parent is in bypassPermissions or acceptEdits mode - those should always take precedence
@@ -418,6 +469,7 @@ export async function* runAgent({
     let toolPermissionContext = state.toolPermissionContext
 
     // Override permission mode if agent defines one (unless parent is bypassPermissions, acceptEdits, or auto)
+    // ! // 1. 覆盖权限模式（除非父是 bypassPermissions/acceptEdits/auto）
     if (
       agentPermissionMode &&
       state.toolPermissionContext.mode !== 'bypassPermissions' &&
@@ -437,6 +489,7 @@ export async function* runAgent({
     // Use explicit canShowPermissionPrompts if provided, otherwise:
     //   - bubble mode: always show prompts (bubbles to parent terminal)
     //   - default: !isAsync (sync agents show prompts, async agents don't)
+    // ! // 2. 异步 Agent 不弹权限对话框（ForkAgent 的 bubble 模式例外）
     const shouldAvoidPrompts =
       canShowPermissionPrompts !== undefined
         ? !canShowPermissionPrompts
@@ -466,6 +519,7 @@ export async function* runAgent({
     // IMPORTANT: Preserve cliArg rules (from SDK's --allowedTools) since those are
     // explicit permissions from the SDK consumer that should apply to all agents.
     // Only clear session-level rules from the parent to prevent unintended leakage.
+    // ! // 3. 工具权限白名单（allowedTools 参数）
     if (allowedTools !== undefined) {
       toolPermissionContext = {
         ...toolPermissionContext,
@@ -479,6 +533,7 @@ export async function* runAgent({
     }
 
     // Override effort level if agent defines one
+    // ! // 4. 努力值覆盖
     const effortValue =
       agentDefinition.effort !== undefined
         ? agentDefinition.effort
@@ -505,6 +560,12 @@ export async function* runAgent({
     appState.toolPermissionContext.additionalWorkingDirectories.keys(),
   )
 
+  // !
+  /**
+   * 与 ForkAgent 的对比：
+ForkAgent 使用 override.systemPrompt = toolUseContext.renderedSystemPrompt（父 Agent 的渲染字节）
+SubAgent 调用 getAgentSystemPrompt() 构建全新的系统提示
+   */
   const agentSystemPrompt = override?.systemPrompt
     ? override.systemPrompt
     : asSystemPrompt(
@@ -558,6 +619,7 @@ if (additionalContexts.length > 0) {
 }
 用户配置的 hooks（如 UserPromptSubmit、SubagentStart）返回的附加上下文，以 <system-reminder> 包裹注入 user messages。
    */
+  // ! // 将 hook 上下文注入为 user message（isMeta: true）
   if (additionalContexts.length > 0) {
     const contextMessage = createAttachmentMessage({
       type: 'hook_additional_context',
@@ -586,10 +648,12 @@ if (additionalContexts.length > 0) {
       agentDefinition.hooks,
       `agent '${agentDefinition.agentType}'`,
       true, // isAgent - converts Stop to SubagentStop
+      // ! // isAgent=true，将 Stop hooks 转换为 SubagentStop
     )
   }
 
   // Preload skills from agent frontmatter
+  // ! SubAgent 专有，ForkAgent 不支持：
   const skillsToPreload = agentDefinition.skills ?? []
   if (skillsToPreload.length > 0) {
     const allSkills = await getSkillToolCommands(getProjectRoot())
@@ -633,6 +697,7 @@ if (additionalContexts.length > 0) {
     const { formatSkillLoadingMetadata } = await import(
       '../../utils/processUserInput/processSlashCommand.js'
     )
+    // ! 解析 skill 名称（支持精确匹配、插件前缀、后缀匹配）并发加载所有 skill 内容
     const loaded = await Promise.all(
       validSkills.map(async ({ skillName, skill }) => ({
         skillName,
@@ -640,6 +705,7 @@ if (additionalContexts.length > 0) {
         content: await skill.getPromptForCommand('', toolUseContext),
       })),
     )
+    // ! // 注入为 initialMessages 的 user message（isMeta: true）
     for (const { skillName, skill, content } of loaded) {
       logForDebugging(
         `[Agent: ${agentDefinition.agentType}] Preloaded skill '${skillName}'`,
@@ -661,6 +727,7 @@ if (additionalContexts.length > 0) {
   }
 
   // Initialize agent-specific MCP servers (additive to parent's servers)
+  // ! SubAgent 专有：
   const {
     clients: mergedMcpClients,
     tools: agentMcpTools,
@@ -673,6 +740,7 @@ if (additionalContexts.length > 0) {
   // Merge agent MCP tools with resolved agent tools, deduplicating by name.
   // resolvedTools is already deduplicated (see resolveAgentTools), so skip
   // the spread + uniqBy overhead when there are no agent-specific MCP tools.
+  // ! // 合并 Agent 专属 MCP 工具到工具池
   const allTools =
     agentMcpTools.length > 0
       ? uniqBy([...resolvedTools, ...agentMcpTools], 'name')
@@ -681,19 +749,21 @@ if (additionalContexts.length > 0) {
   // Build agent-specific options
   const agentOptions: ToolUseContext['options'] = {
     isNonInteractiveSession: useExactTools
-      ? toolUseContext.options.isNonInteractiveSession
+      ? toolUseContext.options.isNonInteractiveSession  // ! / ForkAgent：继承
       : isAsync
         ? true
         : (toolUseContext.options.isNonInteractiveSession ?? false),
     appendSystemPrompt: toolUseContext.options.appendSystemPrompt,
-    tools: allTools,
-    commands: [],
+    tools: allTools,  // ! // SubAgent：resolveAgentTools 过滤后的工具
+    commands: [], // ! // SubAgent 不使用 slash commands
     debug: toolUseContext.options.debug,
     verbose: toolUseContext.options.verbose,
     mainLoopModel: resolvedAgentModel,
     // For fork children (useExactTools), inherit thinking config to match the
     // parent's API request prefix for prompt cache hits. For regular
     // sub-agents, disable thinking to control output token costs.
+    // ! // ForkAgent：继承父 thinkingConfig（保证 API 请求前缀字节相同）
+    // ! // SubAgent：禁用 thinking（控制 token 成本）
     thinkingConfig: useExactTools
       ? toolUseContext.options.thinkingConfig
       : { type: 'disabled' as const },
@@ -706,6 +776,7 @@ if (additionalContexts.length > 0) {
     // (which rewrites messages, not context.options). Without this, the guard
     // reads undefined and only the message-scan fallback fires — which
     // autocompact defeats by replacing the fork-boilerplate message.
+    // ! // ForkAgent 专用：将 querySource 写入 options，用于递归 fork 检测
     ...(useExactTools && { querySource }),
   }
 
@@ -721,8 +792,9 @@ if (additionalContexts.length > 0) {
     abortController: agentAbortController,
     getAppState: agentGetAppState,
     // Sync agents share these callbacks with parent
-    shareSetAppState: !isAsync,
+    shareSetAppState: !isAsync, // ! // 同步 SubAgent 共享父的 
     shareSetResponseLength: true, // Both sync and async contribute to response metrics
+    // ! // 同步/异步都贡献响应长度指标
     criticalSystemReminder_EXPERIMENTAL:
       agentDefinition.criticalSystemReminder_EXPERIMENTAL,
     contentReplacementState,
@@ -762,9 +834,9 @@ if (additionalContexts.length > 0) {
   try {
     for await (const message of query({
       messages: initialMessages,
-      systemPrompt: agentSystemPrompt,
-      userContext: resolvedUserContext,
-      systemContext: resolvedSystemContext,
+      systemPrompt: agentSystemPrompt,  // ! // SubAgent：自己构建的系统提示
+      userContext: resolvedUserContext, // ! // 可能省略 CLAUDE.md
+      systemContext: resolvedSystemContext, // ! // 可能省略 gitStatus
       canUseTool,
       toolUseContext: agentToolUseContext,
       querySource,
@@ -773,6 +845,7 @@ if (additionalContexts.length > 0) {
       onQueryProgress?.()
       // Forward subagent API request starts to parent's metrics display
       // so TTFT/OTPS update during subagent execution.
+      // ! // 转发 stream_event 的 TTFT 指标给父 Agent
       if (
         message.type === 'stream_event' &&
         message.event.type === 'message_start' &&
@@ -804,6 +877,7 @@ if (additionalContexts.length > 0) {
         continue
       }
 
+      // ! // 记录到 sidechain transcript
       if (isRecordableMessage(message)) {
         // Record only the new message with correct parent (O(1) per message)
         await recordSidechainTranscript(
@@ -825,33 +899,41 @@ if (additionalContexts.length > 0) {
     }
 
     // Run callback if provided (only built-in agents have callbacks)
+    // ! SubAgent 完成后的回调（仅内置 Agent）：
     if (isBuiltInAgent(agentDefinition) && agentDefinition.callback) {
       agentDefinition.callback()
     }
   } finally {
+    // ! runAgent.ts:831-874 — finally 块确保资源清理：
     // Clean up agent-specific MCP servers (runs on normal completion, abort, or error)
-    await mcpCleanup()
+    await mcpCleanup()  // ! // 清理 Agent 专属 MCP 服务器
     // Clean up agent's session hooks
     if (agentDefinition.hooks) {
+      // ! // 清理 frontmatter hooks
       clearSessionHooks(rootSetAppState, agentId)
     }
     // Clean up prompt cache tracking state for this agent
     if (feature('PROMPT_CACHE_BREAK_DETECTION')) {
+      // ! // 清理 prompt cache 跟踪状态
       cleanupAgentTracking(agentId)
     }
     // Release cloned file state cache memory
+    // ! // 释放文件状态缓存内存
     agentToolUseContext.readFileState.clear()
     // Release the cloned fork context messages
+    // ! // 释放消息数组内存
     initialMessages.length = 0
+    // ! // 释放 Perfetto 追踪注册
     // Release perfetto agent registry entry
     unregisterPerfettoAgent(agentId)
     // Release transcript subdir mapping
+    // ! // 清理 transcript 子目录映射
     clearAgentTranscriptSubdir(agentId)
     // Release this agent's todos entry. Without this, every subagent that
     // called TodoWrite leaves a key in AppState.todos forever (even after all
     // items complete, the value is [] but the key stays). Whale sessions
     // spawn hundreds of agents; each orphaned key is a small leak that adds up.
-    rootSetAppState(prev => {
+    rootSetAppState(prev => { // ! // 清理 todos 条目（防内存泄漏）
       if (!(agentId in prev.todos)) return prev
       const { [agentId]: _removed, ...todos } = prev.todos
       return { ...prev, todos }
@@ -859,6 +941,7 @@ if (additionalContexts.length > 0) {
     // Kill any background bash tasks this agent spawned. Without this, a
     // `run_in_background` shell loop (e.g. test fixture fake-logs.sh) outlives
     // the agent as a PPID=1 zombie once the main session eventually exits.
+    // ! // 杀死 Agent 启动的后台 bash 任务
     killShellTasksForAgent(agentId, toolUseContext.getAppState, rootSetAppState)
     /* eslint-disable @typescript-eslint/no-require-imports */
     if (feature('MONITOR_TOOL')) {
@@ -918,6 +1001,8 @@ export function filterIncompleteToolCalls(messages: Message[]): Message[] {
   })
 }
 
+// ! src/tools/AgentTool/runAgent.ts:921
+// ! SubAgent 有自己独立的系统提示，通过 getAgentSystemPrompt() 构建：
 async function getAgentSystemPrompt(
   agentDefinition: AgentDefinition,
   toolUseContext: Pick<ToolUseContext, 'options'>,
@@ -927,9 +1012,21 @@ async function getAgentSystemPrompt(
 ): Promise<string[]> {
   const enabledToolNames = new Set(resolvedTools.map(t => t.name))
   try {
+    // ! // 调用 Agent 定义的 getSystemPrompt()
     const agentPrompt = agentDefinition.getSystemPrompt({ toolUseContext })
     const prompts = [agentPrompt]
 
+    // ! // 追加环境信息（CWD、平台、模型等）
+    /**
+     * Notes:
+- Agent threads always have their cwd reset between bash calls, as a result please only use absolute file paths.
+- In your final response, share file paths (always absolute, never relative) that are relevant to the task.
+  Include code snippets only when the exact text is load-bearing...
+- For clear communication with the user the assistant MUST avoid using emojis.
+- Do not use a colon before tool calls...
+
+<环境信息（computeEnvInfo）：CWD、平台、Shell、模型名、知识截止日期等>
+     */
     return await enhanceSystemPromptWithEnvDetails(
       prompts,
       resolvedAgentModel,
@@ -937,6 +1034,14 @@ async function getAgentSystemPrompt(
       enabledToolNames,
     )
   } catch (_error) {
+    // ! // 回退到默认 Agent 提示
+    /**
+     * You are an agent for Claude Code, Anthropic's official CLI for Claude.
+Given the user's message, you should use the tools available to complete the task.
+Complete the task fully—don't gold-plate, but don't leave it half-done.
+When you complete the task, respond with a concise report covering what was done and any key findings
+— the caller will relay this to the user, so it only needs the essentials.
+     */
     return enhanceSystemPromptWithEnvDetails(
       [DEFAULT_AGENT_PROMPT],
       resolvedAgentModel,

@@ -67,6 +67,23 @@ export type ResolvedAgentTools = {
   allowedAgentTypes?: string[]
 }
 
+// !
+/**
+ * 工具过滤规则（filterToolsForAgent，agentToolUtils.ts:70）
+ALL_AGENT_DISALLOWED_TOOLS（constants/tools.ts:36） — 所有 SubAgent 都不能使用：
+
+TaskOutput（防递归）
+ExitPlanMode、EnterPlanMode（Plan 模式是主线程抽象）
+AgentTool（外部用户禁止，防递归；ant 用户允许嵌套 Agent）
+AskUserQuestion（SubAgent 不能直接与用户交互）
+TaskStop（需要主线程任务状态）
+ASYNC_AGENT_ALLOWED_TOOLS（constants/tools.ts:55） — 异步 SubAgent 只能使用这些工具：
+
+FileRead, WebSearch, TodoWrite, Grep, WebFetch, Glob,
+Bash/PowerShell, FileEdit, FileWrite, NotebookEdit,
+Skill, SyntheticOutput, ToolSearch, EnterWorktree, ExitWorktree
+注意： ForkAgent 使用 useExactTools=true，完全绕过 resolveAgentTools()，直接使用父 Agent 的工具数组引用（runAgent.ts:500-502）。
+ */
 export function filterToolsForAgent({
   tools,
   isBuiltIn,
@@ -124,7 +141,7 @@ export function resolveAgentTools(
     AgentDefinition,
     'tools' | 'disallowedTools' | 'source' | 'permissionMode'
   >,
-  availableTools: Tools,
+  availableTools: Tools,  // ! // 父 Agent 的工具池（workerTools，按 bubble 权限模式重新组装）
   isAsync = false,
   isMainThread = false,
 ): ResolvedAgentTools {
@@ -137,6 +154,7 @@ export function resolveAgentTools(
   // When isMainThread is true, skip filterToolsForAgent entirely — the main
   // thread's tool pool is already properly assembled by useMergedTools(), so
   // the sub-agent disallow lists shouldn't apply.
+  // ! // Step 1: 基础过滤（ALL_AGENT_DISALLOWED_TOOLS + ASYNC_AGENT_ALLOWED_TOOLS）
   const filteredAvailableTools = isMainThread
     ? availableTools
     : filterToolsForAgent({
@@ -147,6 +165,7 @@ export function resolveAgentTools(
       })
 
   // Create a set of disallowed tool names for quick lookup
+  // ! // Step 2: 应用 disallowedTools 黑名单
   const disallowedToolSet = new Set(
     disallowedTools?.map(toolSpec => {
       const { toolName } = permissionRuleValueFromString(toolSpec)
@@ -155,6 +174,7 @@ export function resolveAgentTools(
   )
 
   // Filter available tools based on disallowed list
+  // ! // Step 3: 若 tools = undefined 或 ['*']，返回全部过滤后的工具
   const allowedAvailableTools = filteredAvailableTools.filter(
     tool => !disallowedToolSet.has(tool.name),
   )
@@ -183,6 +203,9 @@ export function resolveAgentTools(
   const resolvedToolsSet = new Set<Tool>()
   let allowedAgentTypes: string[] | undefined
 
+  // ! // Step 4: 按 tools 白名单精确匹配
+  // 特殊处理：Agent(worker, researcher) 语法提取 allowedAgentTypes
+  // 特殊处理：ExitPlanMode 工具在 plan 模式下允许
   for (const toolSpec of agentTools) {
     // Parse the tool spec to extract the base tool name and any permission pattern
     const { toolName, ruleContent } = permissionRuleValueFromString(toolSpec)

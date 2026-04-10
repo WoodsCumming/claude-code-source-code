@@ -302,7 +302,7 @@ export type SubagentContextOverrides = {
    * are re-replaced (prompt cache stability). */
   contentReplacementState?: ContentReplacementState
 }
-
+// ! 
 /**
  * Creates an isolated ToolUseContext for subagents.
  *
@@ -341,6 +341,25 @@ export type SubagentContextOverrides = {
  *   shareSetResponseLength: true,
  *   shareAbortController: true,
  * })
+ */
+/**
+ * 上下文隔离：createSubagentContext 的调用差异
+src/utils/forkedAgent.ts:345（两者均调用此函数，但参数不同）
+
+字段	SubAgent（isAsync=false）	SubAgent（isAsync=true）	ForkAgent
+readFileState	createFileStateCacheWithSizeLimit()（全新）	同左	cloneFileStateCache()（克隆父）
+abortController	共享父的（toolUseContext.abortController）	新建（new AbortController()，不链接父）	新建（不链接父）
+setAppState	共享父的（shareSetAppState: true）	no-op（shareSetAppState: false）	no-op
+setResponseLength	共享（shareSetResponseLength: true）	共享（同左）	no-op
+getAppState	包装（权限模式覆盖）	同左 + shouldAvoidPermissionPrompts: true	同左
+messages	[用户 prompt]	同左	[父历史..., directive]
+thinkingConfig	{ type: 'disabled' }	同左	继承父的配置
+querySource	不写入 options	同左	写入 options（防递归检测）
+关键差异：
+
+文件状态缓存：SubAgent 使用全新缓存（与父完全独立），ForkAgent 克隆父缓存（保证相同的 replacement 决策 → cache hit）
+AbortController：同步 SubAgent 共享父的（用户 ESC 立即取消），异步 SubAgent 和 ForkAgent 都新建（后台独立运行）
+setAppState：同步 SubAgent 共享父的（可更新 UI 状态），异步 SubAgent 和 ForkAgent 都是 no-op
  */
 export function createSubagentContext(
   parentContext: ToolUseContext,

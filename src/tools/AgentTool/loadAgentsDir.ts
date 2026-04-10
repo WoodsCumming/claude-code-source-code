@@ -103,46 +103,78 @@ const AgentsJsonSchema = lazySchema(() =>
 )
 
 // Base type with common fields for all agents
+// ! Agent 的配置结构
+/**
+ * 关键字段说明：
+
+字段	SubAgent 含义	ForkAgent 对应
+tools	指定工具列表，['*'] = 全部	不使用（useExactTools=true，直接继承父工具池）
+omitClaudeMd	Explore/Plan 省略 CLAUDE.md 节省 token	不适用（继承父 userContext）
+maxTurns	限制 turn 数，防止无限循环	200（FORK_AGENT 硬编码）
+permissionMode	可覆盖父 Agent 的权限模式	'bubble'（冒泡到父终端）
+background	true 时始终异步运行	始终异步（forceAsync）
+model	可指定不同模型	'inherit'（强制继承父模型）
+hooks	frontmatter 定义的生命周期 hooks	不支持
+skills	启动时预加载的 skill 内容	不支持
+mcpServers	Agent 专属 MCP 服务器	不支持（继承父工具池）
+ */
 export type BaseAgentDefinition = {
-  agentType: string
-  whenToUse: string
-  tools?: string[]
-  disallowedTools?: string[]
+  agentType: string // ! // Agent 类型名，如 'Explore'、'general-purpose'
+  whenToUse: string // ! // 何时使用的描述（显示在 Agent 工具描述中）
+  tools?: string[]  // ! // 允许的工具列表，['*'] 表示全部
+  disallowedTools?: string[]  // ! // 明确禁止的工具列表
   skills?: string[] // Skill names to preload (parsed from comma-separated frontmatter)
+  // ! // 启动时预加载的 skill 名称列表
   mcpServers?: AgentMcpServerSpec[] // MCP servers specific to this agent
+  // ! // Agent 专属的 MCP 服务器
   hooks?: HooksSettings // Session-scoped hooks registered when agent starts
+  // ! // Agent 生命周期 hooks
   color?: AgentColorName
+  // ! // UI 显示颜色
   model?: string
+  // ! // 模型覆盖（'inherit' 继承父 Agent）
   effort?: EffortValue
+  // ! // 计算力级别
   permissionMode?: PermissionMode
+  // ! // 权限模式覆盖
   maxTurns?: number // Maximum number of agentic turns before stopping
+  // ! // 最大 turn 数限制
   filename?: string // Original filename without .md extension (for user/project/managed agents)
   baseDir?: string
   criticalSystemReminder_EXPERIMENTAL?: string // Short message re-injected at every user turn
+  // ! // 每个 user turn 都重新注入的关键提醒
   requiredMcpServers?: string[] // MCP server name patterns that must be configured for agent to be available
+  // ! // 必须存在的 MCP 服务器
   background?: boolean // Always run as background task when spawned
+  // ! // 是否始终以后台任务运行
   initialPrompt?: string // Prepended to the first user turn (slash commands work)
+  // ! // 第一个 user turn 前追加的提示
   memory?: AgentMemoryScope // Persistent memory scope
+  // ! // 持久化记忆范围
   isolation?: 'worktree' | 'remote' // Run in an isolated git worktree, or remotely in CCR (ant-only)
+  // ! // 隔离模式
   pendingSnapshotUpdate?: { snapshotTimestamp: string }
   /** Omit CLAUDE.md hierarchy from the agent's userContext. Read-only agents
    * (Explore, Plan) don't need commit/PR/lint guidelines — the main agent has
    * full CLAUDE.md and interprets their output. Saves ~5-15 Gtok/week across
    * 34M+ Explore spawns. Kill-switch: tengu_slim_subagent_claudemd. */
   omitClaudeMd?: boolean
+  // ! // 是否省略 CLAUDE.md（Explore/Plan 用，节省 token）
 }
 
 // Built-in agents - dynamic prompts only, no static systemPrompt field
 export type BuiltInAgentDefinition = BaseAgentDefinition & {
   source: 'built-in'
   baseDir: 'built-in'
-  callback?: () => void
+  callback?: () => void // ! // 完成后的回调（仅内置 Agent 有）
   getSystemPrompt: (params: {
     toolUseContext: Pick<ToolUseContext, 'options'>
   }) => string
+  // ! // ↑ 内置 Agent 需要 toolUseContext 来动态生成提示
 }
 
 // Custom agents from user/project/policy settings - prompt stored via closure
+// ! // 自定义 Agent（用户/项目/策略设置）（loadAgentsDir.ts:146）
 export type CustomAgentDefinition = BaseAgentDefinition & {
   getSystemPrompt: () => string
   source: SettingSource
@@ -151,6 +183,7 @@ export type CustomAgentDefinition = BaseAgentDefinition & {
 }
 
 // Plugin agents - similar to custom but with plugin metadata, prompt stored via closure
+// ! // 插件 Agent（loadAgentsDir.ts:154）
 export type PluginAgentDefinition = BaseAgentDefinition & {
   getSystemPrompt: () => string
   source: 'plugin'
