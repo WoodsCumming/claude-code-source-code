@@ -341,53 +341,344 @@ if (additionalContexts.length > 0) {
 
 ---
 
-## 5. 组装流程时序
+## 5. 组装流程时序（详细代码调用路径）
+
+### 5.1 入口：系统提示与上下文的并行预取
+
+**`src/utils/queryContext.ts:44` `fetchSystemPromptParts()`**
+
+这是所有 query() 调用前的上游准备步骤，由 `QueryEngine.ts` 或 `print.ts` 调用：
 
 ```
-query() 调用时序（src/query.ts）
+fetchSystemPromptParts()                          queryContext.ts:44
 │
-├─ 1. 获取系统上下文（并行）
-│   ├─ getUserContext()          → { claudeMd, currentDate }
-│   └─ getSystemContext()        → { gitStatus, cacheBreaker? }
+└─ Promise.all([                                  queryContext.ts:61
+    getSystemPrompt(tools, model, dirs, mcp),     prompts.ts:444     → string[]
+    getUserContext(),                              context.ts:155     → { claudeMd, currentDate }
+    getSystemContext(),                            context.ts:116     → { gitStatus, cacheBreaker? }
+   ])
+```
+
+**`src/context.ts:116` `getSystemContext()`（memoize，会话内只运行一次）：**
+```
+getSystemContext()                                context.ts:116
 │
-├─ 2. 构建完整系统提示
-│   │  query.ts:469
-│   └─ fullSystemPrompt = appendSystemContext(systemPrompt, systemContext)
-│       ├─ systemPrompt：来自 getSystemPrompt()（含记忆指令、环境信息等）
-│       └─ systemContext：追加 gitStatus + cacheBreaker
+├─ getGitStatus()                                 context.ts:124-128
+│   └─ 跳过条件：CLAUDE_CODE_REMOTE=1 或 git 指令被禁用
 │
-├─ 3. 处理 messages（attachments → user messages）
-│   │  query.ts 上游，messages 已含 normalizeAttachmentForAPI() 结果
-│   └─ messagesForQuery：所有 attachment 已转换为 user messages
+└─ getSystemPromptInjection()                     context.ts:131-147
+    └─ 条件：feature('BREAK_CACHE_COMMAND')（ant-only）
+    └─ 返回：{ gitStatus?: string, cacheBreaker?: string }
+```
+
+**`src/context.ts:155` `getUserContext()`（memoize，会话内只运行一次）：**
+```
+getUserContext()                                  context.ts:155
 │
-├─ 4. 发送 API 请求
-│   │  query.ts:719
-│   └─ callModel({
+├─ getClaudeMds(filterInjectedMemoryFiles(        context.ts:172
+│     await getMemoryFiles()))
+│   ├─ 跳过条件：CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 或 bare 模式
+│   └─ 从 cwd 向上遍历，收集所有 CLAUDE.md 文件内容
+│
+└─ 返回：{ claudeMd?: string, currentDate: string }
+```
+
+---
+
+### 5.2 用户输入处理：attachment 生成
+
+用户按下回车后，**在 `query()` 被调用之前**，`processUserInput()` 先处理用户输入并生成 attachment messages：
+
+```
+processUserInput(input, ...)                      processUserInput.ts:85
+│
+├─ 解析输入类型（普通文本 / bash / slash command）
+│
+├─ shouldExtractAttachments = true（非 slash command 时）
+│                                                 processUserInput.ts:496
+├─ getAttachmentMessages(input, context, ...)     attachments.ts:2937
+│   │
+│   └─ getAttachments(input, ...)                 attachments.ts:743
+│       │
+│       ├─ [用户输入触发的 attachments]（并行）   attachments.ts:773
+│       │   ├─ processAtMentionedFiles()           → file/directory attachments
+│       │   ├─ processMcpResourceAttachments()     → MCP 资源 attachments
+│       │   ├─ processAgentMentions()              → agent_mentions attachments
+│       │   └─ getTurnZeroSkillDiscovery()         → skill_discovery attachments（feature门控）
+│       │
+│       └─ [线程级 attachments]（并行）            attachments.ts:824
+│           ├─ getQueuedCommandAttachments()       → queued_command（含 task-notification）
+│           ├─ getDateChangeAttachments()          → date_change
+│           ├─ getDeferredToolsDeltaAttachment()   → deferred_tools_delta
+│           ├─ getAgentListingDeltaAttachment()    → agent_listing_delta
+│           ├─ getMcpInstructionsDeltaAttachment() → mcp_instructions_delta
+│           ├─ getChangedFiles()                   → edited_text_file
+│           ├─ getNestedMemoryAttachments()        → nested_memory
+│           ├─ getDynamicSkillAttachments()        → dynamic_skill
+│           ├─ getSkillListingAttachments()        → skill_listing
+│           ├─ getPlanModeAttachments()            → plan_file_reference
+│           ├─ getAutoModeAttachments()            → auto_mode（feature门控）
+│           ├─ getTodoReminderAttachments()        → todo_reminder / task_reminder
+│           ├─ getTeammateMailboxAttachments()     → teammate_mailbox（feature门控）
+│           ├─ getTeamContextAttachment()          → team_context（feature门控）
+│           └─ getCriticalSystemReminderAttachment() → critical_system_reminder
+│
+└─ 每个 attachment → createAttachmentMessage(attachment)  attachments.ts:2968
+    └─ 返回 AttachmentMessage[]（type: 'attachment'，含原始 Attachment 对象）
+```
+
+这些 `AttachmentMessage` 被追加到 `messages` 数组中，但**尚未转换为 API 格式**。
+
+---
+
+### 5.3 query() 循环入口
+
+**`src/query.ts:219` `query()` → `queryLoop()`**
+
+```
+query(params)                                     query.ts:219
+│   params = {
+│     messages,          // 含 AttachmentMessage 的完整消息数组
+│     systemPrompt,      // 来自 fetchSystemPromptParts()
+│     userContext,        // { claudeMd, currentDate }
+│     systemContext,      // { gitStatus, cacheBreaker? }
+│     canUseTool,
+│     toolUseContext,
+│     querySource,
+│   }
+│
+└─ yield* queryLoop(params, consumedCommandUuids) query.ts:230
+```
+
+---
+
+### 5.4 queryLoop() 每轮迭代的处理流程
+
+**`src/query.ts:250` `queryLoop()`**
+
+```
+queryLoop() — while(true) 循环                    query.ts:316
+│
+├─ [A] 预取 skill discovery（后台并发）           query.ts:342
+│   └─ skillPrefetch.startSkillDiscoveryPrefetch()
+│       └─ 不阻塞，结果在工具执行后收集
+│
+├─ [B] 截取 compact 边界后的消息                  query.ts:377
+│   └─ messagesForQuery = [...getMessagesAfterCompactBoundary(messages)]
+│       └─ 过滤掉 compact 边界之前的旧消息（节省 token）
+│
+├─ [C] 消息预处理管道（顺序执行）
+│   │
+│   ├─ C1. applyToolResultBudget()               query.ts:399
+│   │   └─ 截断过大的工具结果（按 maxResultSizeChars）
+│   │
+│   ├─ C2. snipCompactIfNeeded()                 query.ts:423
+│   │   └─ 历史 Snip 压缩（feature('HISTORY_SNIP')）
+│   │
+│   ├─ C3. deps.microcompact()                   query.ts:434
+│   │   └─ 微压缩：将旧工具结果替换为摘要
+│   │
+│   ├─ C4. contextCollapse.applyCollapsesIfNeeded() query.ts:461
+│   │   └─ 上下文折叠（feature('CONTEXT_COLLAPSE')）
+│   │
+│   └─ C5. deps.autocompact()                    query.ts:475
+│       └─ 超出阈值时触发自动压缩（生成摘要消息）
+│
+├─ [D] ★ 构建 fullSystemPrompt                   query.ts:470
+│   └─ fullSystemPrompt = asSystemPrompt(
+│         appendSystemContext(systemPrompt, systemContext)
+│       )
+│       │
+│       ├─ appendSystemContext()                  api.ts:437
+│       │   └─ [...systemPrompt, "gitStatus: ...\ncacheBreaker: ..."]
+│       │       ↑ 将 systemContext 键值对追加为最后一个字符串块
+│       │
+│       └─ 结果：string[]（最终 system prompt 数组，不含身份前缀）
+│           注：身份前缀在 callModel() 内部的 claude.ts:1361 再次追加
+│
+├─ [E] 调用 LLM API（流式）                       query.ts:720
+│   └─ deps.callModel({
 │         messages: prependUserContext(messagesForQuery, userContext),
-│         │                           ↑ 在 messages 最前插入 claudeMd + currentDate
+│         │         └─ api.ts:449
+│         │             └─ 在 messagesForQuery 最前插入：
+│         │                createUserMessage({
+│         │                  content: "<system-reminder>\n# claudeMd\n...\n# currentDate\n...</system-reminder>",
+│         │                  isMeta: true
+│         │                })
 │         systemPrompt: fullSystemPrompt,
+│         tools: toolUseContext.options.tools,
 │         ...
 │       })
+│       │
+│       └─ → callModel() 内部（claude.ts）见 §5.5
 │
-└─ API 最终请求结构（claude.ts:1699）
-    ├─ system: [
-    │    "x-anthropic-billing-header: ...",  // 归因头
-    │    "You are Claude Code...",            // 身份前缀
-    │    <主系统提示 7 个静态区块>,
-    │    <动态区块：记忆指令、环境信息、会话指导...>,
-    │    "gitStatus: ...\ncacheBreaker: ...", // systemContext 追加
-    │    "ADVISOR_TOOL_INSTRUCTIONS",         // 可选
-    │  ]
-    └─ messages: [
-         { role: "user", content: "<system-reminder>claudeMd + currentDate</system-reminder>", isMeta: true },
-         { role: "user", content: "<system-reminder>file attachment...</system-reminder>", isMeta: true },
-         { role: "user", content: "<system-reminder>skill listing...</system-reminder>", isMeta: true },
-         { role: "user", content: "<system-reminder>task reminder...</system-reminder>", isMeta: true },
-         ...
-         { role: "user", content: "用户实际输入" },           // 真实用户消息
-         { role: "assistant", content: "..." },
-         ...
-       ]
+├─ [F] 流式接收响应，执行工具
+│   └─ 工具执行完毕后，收集 toolResults（UserMessage[]）
+│
+├─ [G] 工具执行后的 mid-turn attachment 注入      query.ts:1705
+│   └─ for await (attachment of getAttachmentMessages(
+│         null,                    // 无新用户输入
+│         updatedToolUseContext,
+│         null,
+│         queuedCommandsSnapshot,  // 含新到达的 task-notification
+│         [...messagesForQuery, ...assistantMessages, ...toolResults],
+│         querySource,
+│       ))
+│       └─ 主要注入：task-notification（fork 完成通知）
+│           → 追加到 toolResults
+│
+├─ [H] 消费 relevant_memories 预取结果            query.ts:1724
+│   └─ pendingMemoryPrefetch.promise → relevant_memories attachments
+│       → 追加到 toolResults
+│
+├─ [I] 消费 skill discovery 预取结果              query.ts:1745
+│   └─ skillPrefetch.collectSkillDiscoveryPrefetch() → skill_discovery attachments
+│       → 追加到 toolResults
+│
+└─ [J] 若 needsFollowUp=true，继续下一轮
+    └─ state.messages = [...messages, ...assistantMessages, ...toolResults]
+        ↑ 下一轮的 messagesForQuery 基础
+```
+
+---
+
+### 5.5 callModel() 内部：最终 API 请求构建
+
+**`src/services/api/claude.ts`**（由 `deps.callModel()` 调用）
+
+```
+callModel(params)                                  claude.ts（入口约 L1200）
+│   params.messages = prependUserContext(messagesForQuery, userContext)
+│   params.systemPrompt = fullSystemPrompt（含 gitStatus）
+│
+├─ [1] 工具模式构建                                claude.ts:1257
+│   └─ toolSchemas = buildToolSchemas(filteredTools)
+│       └─ 含 cache_control 标记（最后一个工具加 ephemeral cache marker）
+│
+├─ [2] ★ 消息规范化                               claude.ts:1266
+│   └─ messagesForAPI = normalizeMessagesForAPI(messages, filteredTools)
+│       │                                          messages.ts:1989
+│       │
+│       ├─ reorderAttachmentsForAPI()              → 将 attachment 上浮到正确位置
+│       │
+│       ├─ 过滤：progress、system（非 local_command）、synthetic error
+│       │
+│       └─ 对每条消息：
+│           ├─ 'attachment' → normalizeAttachmentForAPI(attachment)
+│           │                                      messages.ts:3453
+│           │   └─ 根据 attachment.type 转换为 UserMessage[]：
+│           │       ├─ 'file'（text）   → [tool_use(Read), tool_result(text)]
+│           │       ├─ 'file'（image）  → [tool_use(Read), tool_result(image)]
+│           │       ├─ 'directory'      → [tool_use(Bash,ls), tool_result]
+│           │       ├─ 'queued_command' → [user message]（含 task-notification）
+│           │       ├─ 'todo_reminder'  → [user message, isMeta:true]
+│           │       ├─ 'task_reminder'  → [user message, isMeta:true]
+│           │       ├─ 'relevant_memories' → [user message, isMeta:true]
+│           │       ├─ 'skill_listing'  → [user message, isMeta:true]
+│           │       ├─ 'agent_listing_delta' → [user message, isMeta:true]
+│           │       ├─ 'mcp_instructions_delta' → [user message, isMeta:true]
+│           │       └─ ... 其他所有 attachment 类型
+│           │
+│           ├─ 'user' → 合并连续 user 消息（Bedrock 不支持连续 user）
+│           │
+│           └─ 'assistant' → 规范化 tool_use 输入格式
+│
+├─ [3] 后处理：strip/repair                       claude.ts:1283-1315
+│   ├─ stripToolReferenceBlocksFromUserMessage()   （非 tool search 时）
+│   ├─ stripCallerFieldFromAssistantMessage()
+│   ├─ ensureToolResultPairing()                   修复孤立的 tool_use/result
+│   ├─ stripAdvisorBlocks()                        （无 advisor beta 时）
+│   └─ stripExcessMediaItems()                     （>100 媒体项时截断）
+│
+├─ [4] 指纹计算                                   claude.ts:1325
+│   └─ fingerprint = computeFingerprintFromMessages(messagesForAPI)
+│       └─ 从第一条用户消息计算，用于归因头
+│
+├─ [5] 延迟工具列表注入（tool search）             claude.ts:1330-1345
+│   └─ 若 useToolSearch && !isDeferredToolsDeltaEnabled()：
+│       messagesForAPI = [
+│         createUserMessage({
+│           content: "<available-deferred-tools>\n...\n</available-deferred-tools>",
+│           isMeta: true
+│         }),
+│         ...messagesForAPI,
+│       ]
+│
+├─ [6] ★ 构建最终 system prompt                   claude.ts:1358
+│   └─ systemPrompt = asSystemPrompt([
+│         getAttributionHeader(fingerprint),        // "x-anthropic-billing-header: cc_version=..."
+│         getCLISyspromptPrefix({...}),             // "You are Claude Code..."
+│         ...systemPrompt,                          // 主系统提示（含 gitStatus）
+│         ...(advisorModel ? [ADVISOR_TOOL_INSTRUCTIONS] : []),
+│         ...(injectChromeHere ? [CHROME_TOOL_SEARCH_INSTRUCTIONS] : []),
+│       ].filter(Boolean))
+│
+├─ [7] 构建 system blocks（含 cache_control）      claude.ts:1376
+│   └─ system = buildSystemPromptBlocks(systemPrompt, enablePromptCaching, {...})
+│       │                                          claude.ts:3242
+│       └─ splitSysPromptPrefix() 按 SYSTEM_PROMPT_DYNAMIC_BOUNDARY 分割：
+│           ├─ 分界线前：scope:'global'（跨组织缓存）
+│           └─ 分界线后：scope:'ephemeral'（会话级缓存）
+│
+└─ [8] 发出 API 请求                              claude.ts:~1700
+    └─ anthropic.beta.messages.create({
+          model,
+          system,           // TextBlockParam[]（含 cache_control）
+          messages: addCacheBreakpoints(messagesForAPI, ...),
+          tools: allTools,  // 含 cache_control 标记
+          ...betas, max_tokens, thinking, ...
+       })
+```
+
+---
+
+### 5.6 完整调用链一览
+
+```
+用户按回车
+│
+├─ processUserInput()                             processUserInput.ts:85
+│   └─ getAttachmentMessages(input, ...)          attachments.ts:2937
+│       └─ getAttachments()                       attachments.ts:743
+│           └─ [并行] 所有 attachment 生成函数
+│               → AttachmentMessage[]（追加到 messages）
+│
+├─ query(params)                                  query.ts:219
+│   params.systemPrompt ← fetchSystemPromptParts()  queryContext.ts:44
+│   │   ├─ getSystemPrompt()                      prompts.ts:444
+│   │   ├─ getUserContext()                       context.ts:155
+│   │   └─ getSystemContext()                     context.ts:116
+│   │
+│   └─ queryLoop()                                query.ts:250
+│       │
+│       ├─ messagesForQuery = getMessagesAfterCompactBoundary(messages)  query.ts:377
+│       │
+│       ├─ [消息预处理管道 C1-C5]
+│       │
+│       ├─ fullSystemPrompt = appendSystemContext(systemPrompt, systemContext)  query.ts:470
+│       │   └─ api.ts:437
+│       │
+│       ├─ deps.callModel({                       query.ts:720
+│       │     messages: prependUserContext(messagesForQuery, userContext),
+│       │     │         └─ api.ts:449 → messages[0] = claudeMd+date（isMeta）
+│       │     systemPrompt: fullSystemPrompt,
+│       │   })
+│       │   │
+│       │   └─ callModel() 内部                  claude.ts
+│       │       ├─ normalizeMessagesForAPI()      messages.ts:1989
+│       │       │   └─ AttachmentMessage → UserMessage[]（isMeta）
+│       │       ├─ 注入延迟工具列表（可选）       claude.ts:1337
+│       │       ├─ 追加身份前缀+归因头            claude.ts:1358
+│       │       ├─ buildSystemPromptBlocks()      claude.ts:1376
+│       │       └─ anthropic.messages.create()
+│       │
+│       ├─ [工具执行]
+│       │
+│       ├─ mid-turn getAttachmentMessages()       query.ts:1705
+│       │   └─ 注入 task-notification 等
+│       │
+│       ├─ 消费 relevant_memories 预取            query.ts:1724
+│       └─ 消费 skill_discovery 预取              query.ts:1745
 ```
 
 ---
