@@ -350,6 +350,7 @@ export const builtInCommandNames = memoize(
     new Set(COMMANDS().flatMap(_ => [_.name, ...(_.aliases ?? [])])),
 )
 
+// ! getSkills() — 技能聚合
 async function getSkills(cwd: string): Promise<{
   skillDirCommands: Command[]
   pluginSkills: Command[]
@@ -358,6 +359,7 @@ async function getSkills(cwd: string): Promise<{
 }> {
   try {
     const [skillDirCommands, pluginSkills] = await Promise.all([
+      // ! // 用户/项目技能（从磁盘加载）
       getSkillDirCommands(cwd).catch(err => {
         logError(toError(err))
         logForDebugging(
@@ -365,6 +367,7 @@ async function getSkills(cwd: string): Promise<{
         )
         return []
       }),
+      // ! // 插件技能
       getPluginSkills().catch(err => {
         logError(toError(err))
         logForDebugging('Plugin skills failed to load, continuing without them')
@@ -372,6 +375,8 @@ async function getSkills(cwd: string): Promise<{
       }),
     ])
     // Bundled skills are registered synchronously at startup
+    // ! // 已在启动时注册
+    // ! 内置技能：启动时注册，无需 memoize
     const bundledSkills = getBundledSkills()
     // Built-in plugin skills come from enabled built-in plugins
     const builtinPluginSkills = getBuiltinPluginSkillCommands()
@@ -446,25 +451,28 @@ export function meetsAvailabilityRequirement(cmd: Command): boolean {
  * Loads all command sources (skills, plugins, workflows). Memoized by cwd
  * because loading is expensive (disk I/O, dynamic imports).
  */
+// ! loadAllCommands() — 聚合加载（memoized）
+// ! loadAllCommands：按 cwd memoize，进程内有效
 const loadAllCommands = memoize(async (cwd: string): Promise<Command[]> => {
   const [
     { skillDirCommands, pluginSkills, bundledSkills, builtinPluginSkills },
     pluginCommands,
     workflowCommands,
   ] = await Promise.all([
-    getSkills(cwd),
-    getPluginCommands(),
+    getSkills(cwd), // ! // 所有技能（并行加载 5 个来源）
+    getPluginCommands(),  // ! // 插件提供的 slash 命令
     getWorkflowCommands ? getWorkflowCommands(cwd) : Promise.resolve([]),
   ])
 
+  // ! // 合并顺序决定优先级（前面的先被 findCommand 匹配）
   return [
-    ...bundledSkills,
-    ...builtinPluginSkills,
-    ...skillDirCommands,
-    ...workflowCommands,
-    ...pluginCommands,
-    ...pluginSkills,
-    ...COMMANDS(),
+    ...bundledSkills,        // 1. 内置技能
+    ...builtinPluginSkills,  // 2. 内置插件技能
+    ...skillDirCommands,     // 3. 用户/项目技能
+    ...workflowCommands,     // 4. Workflow 命令
+    ...pluginCommands,       // 5. 插件命令
+    ...pluginSkills,         // 6. 插件技能
+    ...COMMANDS(),           // 7. 内置 slash 命令（/help、/compact 等）
   ]
 })
 
@@ -473,11 +481,13 @@ const loadAllCommands = memoize(async (cwd: string): Promise<Command[]> => {
  * memoized, but availability and isEnabled checks run fresh every call so
  * auth changes (e.g. /login) take effect immediately.
  */
+// ! 命令加载主流程
+// ! getCommands() — 公开入口
 export async function getCommands(cwd: string): Promise<Command[]> {
-  const allCommands = await loadAllCommands(cwd)
+  const allCommands = await loadAllCommands(cwd)  // ! memoized
 
   // Get dynamic skills discovered during file operations
-  const dynamicSkills = getDynamicSkills()
+  const dynamicSkills = getDynamicSkills()  // ! // 文件操作中发现的动态技能
 
   // Build base commands without dynamic skills
   const baseCommands = allCommands.filter(
@@ -511,6 +521,7 @@ export async function getCommands(cwd: string): Promise<Command[]> {
 
   return [
     ...baseCommands.slice(0, insertIndex),
+    // ! 将动态技能插入到内置命令之前（按优先级排序）
     ...uniqueDynamicSkills,
     ...baseCommands.slice(insertIndex),
   ]
@@ -520,6 +531,13 @@ export async function getCommands(cwd: string): Promise<Command[]> {
  * Clears only the memoization caches for commands, WITHOUT clearing skill caches.
  * Use this when dynamic skills are added to invalidate cached command lists.
  */
+// ! 缓存失效
+/**
+ * loadAllCommands：按 cwd memoize，进程内有效
+getSkillDirCommands：按 cwd memoize
+getPluginSkills / getPluginCommands：无参数 memoize（全局单例）
+内置技能：启动时注册，无需 memoize
+ */
 export function clearCommandMemoizationCaches(): void {
   loadAllCommands.cache?.clear?.()
   getSkillToolCommands.cache?.clear?.()
@@ -528,7 +546,7 @@ export function clearCommandMemoizationCaches(): void {
   // built ON TOP of getSkillToolCommands/getCommands. Clearing only the inner
   // caches is a no-op for the outer — lodash memoize returns the cached result
   // without ever reaching the cleared inners. Must clear it explicitly.
-  clearSkillIndexCache?.()
+  clearSkillIndexCache?.()  // ! // 注意：getSkillDirCommands 是单独的 memoize 层，需单独清除
 }
 
 export function clearCommandsCache(): void {
@@ -692,7 +710,7 @@ export function findCommand(
   return commands.find(
     _ =>
       _.name === commandName ||
-      getCommandName(_) === commandName ||
+      getCommandName(_) === commandName ||  // ! // userFacingName() 回退到 name
       _.aliases?.includes(commandName),
   )
 }

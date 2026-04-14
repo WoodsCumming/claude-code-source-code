@@ -22,13 +22,17 @@ export type LocalCommandResult =
     }
   | { type: 'skip' } // Skip messages
 
+// ! 技能的核心类型，表示一个可执行的提示命令：
 export type PromptCommand = {
   type: 'prompt'
   progressMessage: string
   contentLength: number // Length of command content in characters (used for token estimation)
+  // ! // 技能内容字符数，用于 token 估算
   argNames?: string[]
   allowedTools?: string[]
+  // ! // 该技能允许使用的工具列表
   model?: string
+  // ! // 覆盖模型选择
   source: SettingSource | 'builtin' | 'mcp' | 'plugin' | 'bundled'
   pluginInfo?: {
     pluginManifest: PluginManifest
@@ -37,19 +41,25 @@ export type PromptCommand = {
   disableNonInteractive?: boolean
   // Hooks to register when this skill is invoked
   hooks?: HooksSettings
+  // ! // 技能调用时注册的 Hooks
   // Base directory for skill resources (used to set CLAUDE_PLUGIN_ROOT environment variable for skill hooks)
   skillRoot?: string
+  // ! // 技能根目录（用于 CLAUDE_PLUGIN_ROOT 环境变量）
   // Execution context: 'inline' (default) or 'fork' (run as sub-agent)
   // 'inline' = skill content expands into the current conversation
   // 'fork' = skill runs in a sub-agent with separate context and token budget
   context?: 'inline' | 'fork'
+  // ! // 执行上下文：内联 or 子 Agent
   // Agent type to use when forked (e.g., 'Bash', 'general-purpose')
   // Only applicable when context is 'fork'
   agent?: string
+  // ! // fork 时使用的 Agent 类型
   effort?: EffortValue
+  // ! // token 预算
   // Glob patterns for file paths this skill applies to
   // When set, the skill is only visible after the model touches matching files
   paths?: string[]
+  // ! // 条件可见性的 glob 模式（匹配文件时才激活）
   getPromptForCommand(
     args: string,
     context: ToolUseContext,
@@ -172,6 +182,7 @@ export type CommandAvailability =
   // Console API key user (direct api.anthropic.com, not via claude.ai OAuth)
   | 'console'
 
+// ! 所有命令的公共基类：
 export type CommandBase = {
   availability?: CommandAvailability[]
   description: string

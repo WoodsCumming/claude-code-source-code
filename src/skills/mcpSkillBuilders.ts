@@ -30,7 +30,10 @@ export type MCPSkillBuilders = {
 
 let builders: MCPSkillBuilders | null = null
 
+// ! MCP 技能
+// ! MCP 技能通过 context.getAppState().mcp.commands 获取，loadedFrom: 'mcp'，名称格式为 mcp__server__prompt。
 export function registerMCPSkillBuilders(b: MCPSkillBuilders): void {
+  // ! // 存储 createSkillCommand 和 parseSkillFrontmatterFields 供 MCP 客户端使用
   builders = b
 }
 

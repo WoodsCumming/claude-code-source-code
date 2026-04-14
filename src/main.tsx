@@ -1948,11 +1948,42 @@ async function run(): Promise<CommanderCommand> {
     // pure in-memory array pushes (<1ms, zero I/O) that getBundledSkills()
     // reads synchronously. Previously ran inside setup() after ~20ms of
     // await points, so the parallel getCommands() memoized an empty list.
+    /**
+     * Claude Code 启动
+  │
+  ├─ [同步] initBuiltinPlugins()       → 注册内置插件技能到 BUILTIN_PLUGINS map
+  ├─ [同步] initBundledSkills()        → 注册内置技能到 bundledSkills 数组
+  │
+  └─ [异步] getCommands(cwd)
+       └─ loadAllCommands(cwd) [memoized]
+            └─ Promise.all([
+                 getSkills(cwd),
+                 getPluginCommands(),
+                 getWorkflowCommands(),
+               ])
+                 │
+                 └─ getSkills(cwd)
+                      └─ Promise.all([
+                           getSkillDirCommands(cwd),  ← 磁盘扫描（并行 5 个来源）
+                           getPluginSkills(),          ← 已安装插件扫描
+                         ])
+                         + getBundledSkills()          ← 从注册表读取（同步）
+                         + getBuiltinPluginSkillCommands()
+
+用户输入 "/skill args" 或模型调用 Skill 工具
+  │
+  ├─ findCommand(name, commands)       → 按 name/alias 查找
+  ├─ command.getPromptForCommand(args) → 展开技能内容（替换变量/执行 shell）
+  └─ 根据 context 字段决定执行方式：
+       'fork'   → runAgent() 子 Agent 隔离执行
+       'inline' → 内容注入当前对话上下文
+     */
     if (process.env.CLAUDE_CODE_ENTRYPOINT !== 'local-agent') {
-      initBuiltinPlugins();
-      initBundledSkills();
+      initBuiltinPlugins(); // ! // 注册内置插件技能
+      initBundledSkills();  // ! // 注册内置编译技能
     }
     const setupPromise = setup(preSetupCwd, permissionMode, allowDangerouslySkipPermissions, worktreeEnabled, worktreeName, tmuxEnabled, sessionId ? validateUuid(sessionId) : undefined, worktreePRNumber, messagingSocketPath);
+    // ! // 异步加载所有命令（memoized）
     const commandsPromise = worktreeEnabled ? null : getCommands(preSetupCwd);
     const agentDefsPromise = worktreeEnabled ? null : getAgentDefinitionsWithOverrides(preSetupCwd);
     // Suppress transient unhandledRejection if these reject during the

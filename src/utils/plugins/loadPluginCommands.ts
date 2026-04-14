@@ -215,6 +215,8 @@ async function loadCommandsFromDirectory(
 /**
  * Create a Command from a plugin markdown file
  */
+// ! createPluginCommand() — 构造插件命令
+// ! 插件命令支持 ${CLAUDE_PLUGIN_ROOT} 变量替换，命令名格式为 {plugin-name}:{namespace}:{command-name}：
 function createPluginCommand(
   commandName: string,
   file: PluginMarkdownFile,
@@ -240,6 +242,7 @@ function createPluginCommand(
 
     // Substitute ${CLAUDE_PLUGIN_ROOT} in allowed-tools before parsing
     const rawAllowedTools = frontmatter['allowed-tools']
+    // ! // 在 allowed-tools 中替换 ${CLAUDE_PLUGIN_ROOT} 为插件实际路径
     const substitutedAllowedTools =
       typeof rawAllowedTools === 'string'
         ? substitutePluginVariables(rawAllowedTools, {
@@ -411,6 +414,7 @@ function createPluginCommand(
   }
 }
 
+// ! 无参数 memoize（全局单例）
 export const getPluginCommands = memoize(async (): Promise<Command[]> => {
   // --bare: skip marketplace plugin auto-load. Explicit --plugin-dir still
   // works — getInlinePlugins() is set by main.tsx from --plugin-dir.
@@ -837,6 +841,8 @@ async function loadSkillsFromDirectory(
   return skills
 }
 
+// ! 插件技能加载
+// ! 无参数 memoize（全局单例）
 export const getPluginSkills = memoize(async (): Promise<Command[]> => {
   // --bare: same gate as getPluginCommands above — honor explicit
   // --plugin-dir, skip marketplace auto-load.
@@ -857,6 +863,7 @@ export const getPluginSkills = memoize(async (): Promise<Command[]> => {
   )
 
   // Process plugins in parallel; each plugin has its own loadedPaths scope
+  // ! // 并行处理所有已启用插件
   const perPluginSkills = await Promise.all(
     enabled.map(async (plugin): Promise<Command[]> => {
       // Track loaded file paths to prevent duplicates within this plugin
@@ -867,6 +874,7 @@ export const getPluginSkills = memoize(async (): Promise<Command[]> => {
         `Checking plugin ${plugin.name}: skillsPath=${plugin.skillsPath ? 'exists' : 'none'}, skillsPaths=${plugin.skillsPaths ? plugin.skillsPaths.length : 0} paths`,
       )
       // Load skills from default skills directory
+      // ! // 从默认 skills/ 目录加载
       if (plugin.skillsPath) {
         logForDebugging(
           `Attempting to load skills from plugin ${plugin.name} default skillsPath: ${plugin.skillsPath}`,
@@ -894,6 +902,7 @@ export const getPluginSkills = memoize(async (): Promise<Command[]> => {
       }
 
       // Load skills from additional paths specified in manifest
+      // ! // 从 manifest 声明的额外路径加载
       if (plugin.skillsPaths) {
         logForDebugging(
           `Attempting to load skills from plugin ${plugin.name} skillsPaths: ${plugin.skillsPaths.join(', ')}`,

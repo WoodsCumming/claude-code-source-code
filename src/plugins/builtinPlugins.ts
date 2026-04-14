@@ -25,9 +25,11 @@ export const BUILTIN_MARKETPLACE_NAME = 'builtin'
 /**
  * Register a built-in plugin. Call this from initBuiltinPlugins() at startup.
  */
+// ! 内置插件技能
 export function registerBuiltinPlugin(
   definition: BuiltinPluginDefinition,
 ): void {
+  // ! 存入 BUILTIN_PLUGINS map
   BUILTIN_PLUGINS.set(definition.name, definition)
 }
 
@@ -107,6 +109,7 @@ export function getBuiltinPlugins(): {
  */
 export function getBuiltinPluginSkillCommands(): Command[] {
   const { enabled } = getBuiltinPlugins()
+  // ! // 将启用的内置插件的 BundledSkillDefinition 转换为 Command
   const commands: Command[] = []
 
   for (const plugin of enabled) {

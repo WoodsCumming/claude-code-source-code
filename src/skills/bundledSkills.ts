@@ -42,6 +42,8 @@ export type BundledSkillDefinition = {
 }
 
 // Internal registry for bundled skills
+// ! 内置技能注册机制
+// ! // 内部注册表
 const bundledSkills: Command[] = []
 
 /**
@@ -52,6 +54,11 @@ const bundledSkills: Command[] = []
  * They follow the same pattern as registerPostSamplingHook() for internal features.
  */
 export function registerBundledSkill(definition: BundledSkillDefinition): void {
+  /**
+   // 若技能带有 files（参考文件），在首次调用时惰性解压到磁盘
+   // 解压目录通过 getBundledSkillExtractDir(name) 获取
+   // 构造 Command 对象并推入 bundledSkills 数组
+  */
   const { files } = definition
 
   let skillRoot: string | undefined
@@ -105,7 +112,7 @@ export function registerBundledSkill(definition: BundledSkillDefinition): void {
  * Returns a copy to prevent external mutation.
  */
 export function getBundledSkills(): Command[] {
-  return [...bundledSkills]
+  return [...bundledSkills] // ! // 返回副本防止外部修改
 }
 
 /**

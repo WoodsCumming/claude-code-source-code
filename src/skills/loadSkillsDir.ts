@@ -182,6 +182,25 @@ function parseSkillPaths(frontmatter: FrontmatterData): string[] | undefined {
  * MCP skill loading. Caller supplies the resolved skill name and the
  * source/loadedFrom/baseDir/paths fields separately.
  */
+/**
+ *支持的 frontmatter 字段：
+
+字段	类型	说明
+description	string	技能描述
+user-invocable	boolean	用户是否可通过 /name 调用（默认 true）
+allowed-tools	string/string[]	限制可用工具列表
+arguments	string/string[]	声明参数名（用于 $arg1 替换）
+argument-hint	string	参数提示文本
+when_to_use	string	模型使用指导
+model	string	覆盖模型（opus/sonnet/haiku/inherit）
+effort	string/int	token 预算（min/max 或 1-8）
+context	'fork'	以子 Agent 运行
+agent	string	fork 时使用的 Agent 类型
+hooks	object	技能调用时注册的 Hooks
+paths	string/string[]	条件激活的 glob 模式
+name	string	显示名称（覆盖目录名）
+version	string	技能版本号 
+ */
 export function parseSkillFrontmatterFields(
   frontmatter: FrontmatterData,
   markdownContent: string,
@@ -213,11 +232,13 @@ export function parseSkillFrontmatterFields(
     validatedDescription ??
     extractDescriptionFromMarkdown(markdownContent, descriptionFallbackLabel)
 
+  // ! // user-invocable 默认为 true
   const userInvocable =
     frontmatter['user-invocable'] === undefined
       ? true
       : parseBooleanFrontmatter(frontmatter['user-invocable'])
 
+  // ! // model: 'inherit' → undefined（使用全局默认）
   const model =
     frontmatter.model === 'inherit'
       ? undefined
@@ -267,6 +288,7 @@ export function parseSkillFrontmatterFields(
 /**
  * Creates a skill command from parsed data
  */
+// ! createSkillCommand() — 构造 Command 对象
 export function createSkillCommand({
   skillName,
   displayName,
@@ -346,6 +368,7 @@ export function createSkillCommand({
         ? `Base directory for this skill: ${baseDir}\n\n${markdownContent}`
         : markdownContent
 
+      // ! // 1. 替换 $arg1/$arg2 等参数占位符
       finalContent = substituteArguments(
         finalContent,
         args,
@@ -356,12 +379,14 @@ export function createSkillCommand({
       // Replace ${CLAUDE_SKILL_DIR} with the skill's own directory so bash
       // injection (!`...`) can reference bundled scripts. Normalize backslashes
       // to forward slashes on Windows so shell commands don't treat them as escapes.
+      // ! // 2. 替换 ${CLAUDE_SKILL_DIR} 为技能目录路径
       if (baseDir) {
         const skillDir =
           process.platform === 'win32' ? baseDir.replace(/\\/g, '/') : baseDir
         finalContent = finalContent.replace(/\$\{CLAUDE_SKILL_DIR\}/g, skillDir)
       }
 
+      // ! // 3. 替换 ${CLAUDE_SESSION_ID}
       // Replace ${CLAUDE_SESSION_ID} with the current session ID
       finalContent = finalContent.replace(
         /\$\{CLAUDE_SESSION_ID\}/g,
@@ -371,6 +396,7 @@ export function createSkillCommand({
       // Security: MCP skills are remote and untrusted — never execute inline
       // shell commands (!`…` / ```! … ```) from their markdown body.
       // ${CLAUDE_SKILL_DIR} is meaningless for MCP skills anyway.
+      // ! // 4. 执行 !`command` 内联 shell 命令（MCP 技能除外，不信任远程内容）
       if (loadedFrom !== 'mcp') {
         finalContent = await executeShellCommandsInPrompt(
           finalContent,
@@ -404,6 +430,7 @@ export function createSkillCommand({
  * Loads skills from a /skills/ directory path.
  * Only supports directory format: skill-name/SKILL.md
  */
+// ! loadSkillsFromSkillsDir() — 单目录加载
 async function loadSkillsFromSkillsDir(
   basePath: string,
   source: SettingSource,
@@ -422,6 +449,7 @@ async function loadSkillsFromSkillsDir(
     entries.map(async (entry): Promise<SkillWithPath | null> => {
       try {
         // Only support directory format: skill-name/SKILL.md
+        // ! // 只支持目录格式：skill-name/SKILL.md
         if (!entry.isDirectory() && !entry.isSymbolicLink()) {
           // Single .md files are NOT supported in /skills/ directory
           return null
@@ -636,18 +664,38 @@ async function loadSkillsFromCommandsDir(
  * @param cwd Current working directory for project directory traversal
  */
 // ! 从磁盘加载用户自定义 skill
+// ! 用户/项目技能加载
+// ! 目录发现
+/**
+ * 支持的目录结构：
+
+~/.claude/skills/           ← 用户全局技能
+  my-skill/
+    SKILL.md                ← 必须是目录格式，单文件 .md 不支持
+
+.claude/skills/             ← 项目级技能（向上查找直到 home 目录）
+  project-skill/
+    SKILL.md
+    assets/                 ← 可选参考文件
+
+.claude/commands/           ← 旧版兼容（支持单文件格式）
+  my-cmd.md                 ← 单文件格式
+  my-cmd/
+    SKILL.md                ← 目录格式
+ */
+// ! getSkillDirCommands：按 cwd memoize
 export const getSkillDirCommands = memoize(
   async (cwd: string): Promise<Command[]> => {
-    const userSkillsDir = join(getClaudeConfigHomeDir(), 'skills')
-    const managedSkillsDir = join(getManagedFilePath(), '.claude', 'skills')
-    const projectSkillsDirs = getProjectDirsUpToHome('skills', cwd)
+    const userSkillsDir = join(getClaudeConfigHomeDir(), 'skills')  // ! // ~/.claude/skills/
+    const managedSkillsDir = join(getManagedFilePath(), '.claude', 'skills')  // ! // 管理员配置
+    const projectSkillsDirs = getProjectDirsUpToHome('skills', cwd) // ! // .claude/skills/（向上查找）
 
     logForDebugging(
       `Loading skills from: managed=${managedSkillsDir}, user=${userSkillsDir}, project=[${projectSkillsDirs.join(', ')}]`,
     )
 
     // Load from additional directories (--add-dir)
-    const additionalDirs = getAdditionalDirectoriesForClaudeMd()
+    const additionalDirs = getAdditionalDirectoriesForClaudeMd()  // ! // --add-dir 参数
     const skillsLocked = isRestrictedToPluginOnly('skills')
     const projectSettingsEnabled =
       isSettingSourceEnabled('projectSettings') && !skillsLocked
@@ -677,6 +725,7 @@ export const getSkillDirCommands = memoize(
 
     // Load from /skills/ directories, additional dirs, and legacy /commands/ in parallel
     // (all independent — different directories, no shared state)
+    // ! // 并行加载所有来源（互相独立，无共享状态）
     const [
       managedSkills,
       userSkills,
@@ -711,7 +760,7 @@ export const getSkillDirCommands = memoize(
       // subdir='commands', which our agents-only guard there skips. Block
       // here when skills are locked — these ARE skills, regardless of the
       // directory they load from.
-      skillsLocked ? Promise.resolve([]) : loadSkillsFromCommandsDir(cwd),
+      skillsLocked ? Promise.resolve([]) : loadSkillsFromCommandsDir(cwd),  // ! // 兼容旧版 /commands/ 目录
     ])
 
     // Flatten and combine all skills
@@ -726,6 +775,8 @@ export const getSkillDirCommands = memoize(
     // Deduplicate by resolved path (handles symlinks and duplicate parent directories)
     // Pre-compute file identities in parallel (realpath calls are independent),
     // then dedup synchronously (order-dependent first-wins)
+    // ! 去重（基于文件真实路径）
+    // ! 通过 realpath() 解析符号链接，避免同一文件被多个来源重复加载：
     const fileIds = await Promise.all(
       allSkillsWithPaths.map(({ skill, filePath }) =>
         skill.type === 'prompt'
@@ -784,6 +835,7 @@ export const getSkillDirCommands = memoize(
         skill.paths.length > 0 &&
         !activatedConditionalSkillNames.has(skill.name)
       ) {
+        // ! // 存储为条件技能，等待文件操作触发
         newConditionalSkills.push(skill)
       } else {
         unconditionalSkills.push(skill)

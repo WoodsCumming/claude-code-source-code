@@ -99,6 +99,7 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
   // isMeta prompts are hidden. Outside assistant mode, context:fork commands
   // are user-invoked skills (/commit etc.) that should run synchronously
   // with the progress UI.
+  // ! // KAIROS 模式：后台异步执行，立即返回
   if (feature('KAIROS') && (await context.getAppState()).kairosEnabled) {
     // Standalone abortController — background subagents survive main-thread
     // ESC (same policy as AgentTool's async path). They're cron-driven; if
@@ -226,6 +227,7 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
 
   // Run the sub-agent
   try {
+    // ! // 普通模式：同步等待子 Agent 完成
     for await (const message of runAgent({
       agentDefinition,
       promptMessages,
@@ -306,6 +308,27 @@ export function looksLikeCommand(commandName: string): boolean {
   // If it contains other characters, it's probably a file path or other input
   return !/[^a-zA-Z0-9:\-_]/.test(commandName);
 }
+/**
+ * 用户输入 "/commit fix bug"
+  ↓
+processSlashCommand()  [第 309 行]
+  ↓
+getMessagesForSlashCommand()  [第 525 行]
+  ↓
+processPromptSlashCommand("commit", "fix bug", commands, context)  [第 817 行]
+  ↓
+findCommand("commit", commands) → Command 对象
+  ↓
+getMessagesForPromptSlashCommand(command, "fix bug", context)  [第 827 行]
+  ├─ 检查 context === 'fork'？
+  │   YES → executeForkedSlashCommand()  [第 62 行]
+  │         ├─ prepareForkedCommandContext()
+  │         ├─ runAgent() 在子 Agent 中执行
+  │         └─ 返回结果作为 UserMessage
+  │   NO  → command.getPromptForCommand("fix bug", context)
+  │         → 返回 [{ type: 'text', text: 技能内容 }]
+  └─ 返回 { messages: [...], shouldQuery: true }
+*/
 export async function processSlashCommand(inputString: string, precedingInputBlocks: ContentBlockParam[], imageContentBlocks: ContentBlockParam[], attachmentMessages: AttachmentMessage[], context: ProcessUserInputContext, setToolJSX: SetToolJSXFn, uuid?: string, isAlreadyProcessing?: boolean, canUseTool?: CanUseToolFn): Promise<ProcessUserInputBaseResult> {
   const parsed = parseSlashCommand(inputString);
   if (!parsed) {
@@ -724,9 +747,11 @@ async function getMessagesForSlashCommand(commandName: string, args: string, set
         {
           try {
             // Check if command should run as forked sub-agent
+            // ! Fork 模式执行
             if (command.context === 'fork') {
               return await executeForkedSlashCommand(command, args, context, precedingInputBlocks, setToolJSX, canUseTool ?? hasPermissionsToUseTool);
             }
+            // ! 非Fork 模式执行
             return await getMessagesForPromptSlashCommand(command, args, context, precedingInputBlocks, imageContentBlocks, uuid);
           } catch (e) {
             // Handle abort errors specially to show proper "Interrupted" message

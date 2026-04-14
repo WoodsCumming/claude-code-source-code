@@ -149,6 +149,7 @@ async function executeForkedSkill(
     : undefined
   const queryDepth = context.queryTracking?.depth ?? 0
   const parentAgentId = getAgentContext()?.agentId
+  // ! // 记录遥测事件
   logEvent('tengu_skill_tool_invocation', {
     command_name:
       forkedSanitizedName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -220,6 +221,7 @@ async function executeForkedSkill(
 
   try {
     // Run the sub-agent
+    // ! // 通过 runAgent() 在子 Agent 中执行技能
     for await (const message of runAgent({
       agentDefinition,
       promptMessages,
@@ -328,6 +330,32 @@ type OutputSchema = ReturnType<typeof outputSchema>
 
 export type Output = z.input<OutputSchema>
 
+// ! 模型通过 SkillTool 调用
+/**
+ * 模型输出 ToolUse:
+  { type: 'tool_use', name: 'Skill', input: { skill: 'commit', args: 'fix bug' } }
+  ↓
+SkillTool.validateInput()  [第 447 行]
+  ├─ 检查权限（getRuleByContentsForTool）
+  └─ 只有安全属性的技能自动允许（SAFE_SKILL_PROPERTIES，第 875 行）
+  ↓
+SkillTool.call({ skill: 'commit', args: 'fix bug' }, context, ...)  [第 580 行]
+  ├─ 去掉前导 '/' → commandName = 'commit'
+  ├─ 检查是否为远程 canonical 技能（ant 内部实验性功能）
+  ├─ getAllCommands(context)  [第 81 行]
+  │   └─ getCommands() + MCP 技能合并
+  ├─ findCommand('commit', commands)
+  ├─ recordSkillUsage('commit')  ← 记录使用频率用于排序
+  ├─ 检查 command.context === 'fork'？
+  │   YES → executeForkedSkill()  [第 122 行]
+  │   NO  → processPromptSlashCommand('commit', 'fix bug', ...)
+  ├─ 提取 allowedTools、model、effort
+  └─ 构造 modifiedContext（注入 allowedTools、model 覆盖、effort 覆盖）
+  ↓
+mapToolResultToToolResultBlockParam()  [第 843 行]
+  ├─ fork 结果：返回 "Skill completed (forked execution).\n\nResult: ..."
+  └─ inline 结果：返回 "Launching skill: commit"
+ */
 export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
   name: SKILL_TOOL_NAME,
   searchHint: 'invoke a slash-command skill',

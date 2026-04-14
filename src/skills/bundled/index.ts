@@ -21,6 +21,7 @@ import { registerVerifySkill } from './verify.js'
  * 2. Export a register function that calls registerBundledSkill()
  * 3. Import and call that function here
  */
+// ! 内置技能初始化
 export function initBundledSkills(): void {
   registerUpdateConfigSkill()
   registerKeybindingsSkill()
@@ -32,6 +33,7 @@ export function initBundledSkills(): void {
   registerSimplifySkill()
   registerBatchSkill()
   registerStuckSkill()
+  // ! // 特性门控技能（feature flags）
   if (feature('KAIROS') || feature('KAIROS_DREAM')) {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const { registerDreamSkill } = require('./dream.js')
