@@ -29,6 +29,11 @@ type RipgrepConfig = {
 }
 
 const getRipgrepConfig = memoize((): RipgrepConfig => {
+  /**
+   * 优先级 1: 系统 ripgrep (USE_BUILTIN_RIPGREP=false)
+  → 使用 PATH 中的 rg 二进制
+  → 安全考虑：只用命令名 'rg'，不用完整路径，防止 PATH 劫持
+   */
   const userWantsSystemRipgrep = isEnvDefinedFalsy(
     process.env.USE_BUILTIN_RIPGREP,
   )
@@ -46,6 +51,11 @@ const getRipgrepConfig = memoize((): RipgrepConfig => {
 
   // In bundled (native) mode, ripgrep is statically compiled into bun-internal
   // and dispatches based on argv[0]. We spawn ourselves with argv0='rg'.
+  /**
+   * 优先级 2: 内嵌模式 (bundled/native build)
+  → process.execPath 自身，argv0='rg'
+  → Bun 将 rg 静态编译进二进制，通过 argv0 分发
+   */
   if (isInBundledMode()) {
     return {
       mode: 'embedded',
@@ -55,6 +65,11 @@ const getRipgrepConfig = memoize((): RipgrepConfig => {
     }
   }
 
+  /**
+   * 优先级 3: vendor 目录 (npm build)
+  → vendor/ripgrep/{arch}-{platform}/rg
+  → macOS 需要 codesign 签名 + 移除 quarantine xattr
+   */
   const rgRoot = path.resolve(__dirname, 'vendor', 'ripgrep')
   const command =
     process.platform === 'win32'
@@ -342,6 +357,23 @@ export async function ripGrepStream(
   })
 }
 
+/**
+ *  搜索结果的设计考量:
+head_limit 与 Token 预算
+大型项目的搜索结果可能有数十万条。默认最多返回 250 条匹配——这不是随意选择，而是token 预算的约束：
+每条匹配行约 50-100 token
+250 条 ≈ 12,500-25,000 token
+这大约占 200k 上下文窗口的 6-12%
+超过这个比例，AI 的推理质量会下降
+Grep 工具的 head_limit 参数让 AI 可以按需调整——搜索小项目时可以用更大的值。 
+ */
+/**
+按修改时间排序
+Glob 默认把最近修改的文件排在前面。这不是默认的文件系统排序，而是刻意的设计决策：
+设计假设：最近修改的文件最可能与当前任务相关
+实际效果：AI 优先看到"活"的代码，而不是沉寂的历史文件
+在 src/tools/GlobTool/ 中，ripgrep 的输出在返回给 AI 前按 mtime 排序。
+ */
 export async function ripGrep(
   args: string[],
   target: string,
@@ -379,6 +411,15 @@ export async function ripGrep(
         return
       }
 
+      /**
+       * ripgrep 的错误处理
+          ripgrep 执行有专门的错误恢复链（src/utils/ripgrep.ts）：
+          错误	处理
+          EAGAIN（资源不足）	自动以单线程模式 -j 1 重试
+          超时（默认 20s，WSL 60s）	返回已有部分结果，丢弃可能不完整的最后一行
+          缓冲区溢出	截断到 20MB，返回已收集的结果
+          SIGTERM 失效	5 秒后升级为 SIGKILL
+       */
       // Critical errors that indicate ripgrep is broken, not "no matches"
       // These should be surfaced to the user rather than silently returning empty results
       const CRITICAL_ERROR_CODES = ['ENOENT', 'EACCES', 'EPERM']
@@ -617,6 +658,17 @@ const testRipgrepOnFirstUse = memoize(async (): Promise<void> => {
 })
 
 let alreadyDoneSignCheck = false
+// ! macOS 代码签名
+// ! vendor 模式下的 rg 二进制需要 ad-hoc 签名才能通过 Gatekeeper
+/**
+ *  首次使用时执行：
+// 1. 检查是否已是有效签名
+codesign -vv -d <rg-path>
+// 2. 如果只是 linker-signed，重新签名
+codesign --sign - --force --preserve-metadata=entitlements,requirements,flags,runtime <rg-path>
+// 3. 移除隔离属性
+xattr -d com.apple.quarantine <rg-path>
+ */
 async function codesignRipgrepIfNecessary() {
   if (process.platform !== 'darwin' || alreadyDoneSignCheck) {
     return
