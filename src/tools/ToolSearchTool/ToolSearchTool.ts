@@ -89,6 +89,7 @@ const getToolDescriptionMemoized = memoize(
  * Invalidate the description cache if deferred tools have changed.
  */
 function maybeInvalidateCache(deferredTools: Tools): void {
+  // ! // 工具名排序后拼接作为缓存 key
   const currentKey = getDeferredToolsCacheKey(deferredTools)
   if (cachedDeferredToolNames !== currentKey) {
     logForDebugging(
@@ -183,6 +184,23 @@ function compileTermPatterns(terms: string[]): Map<string, RegExp> {
  * - Action words when looking for functionality (e.g., "read", "list", "create")
  * - Tool-specific terms (e.g., "notebook", "shell", "kill")
  */
+/**
+ * 输入: query = "database connection"
+     ↓
+1. 精确匹配: 检查是否有工具名完全匹配（快速路径）
+2. MCP 前缀匹配: "mcp__postgres" → 匹配所有 postgres 相关工具
+3. 关键词拆分: ["database", "connection"]
+4. 工具名解析:
+   - MCP 工具: "mcp__server__action" → ["server", "action"]
+   - 普通工具: "FileEditTool" → ["file", "edit", "tool"]
+5. 加权评分:
+   - 工具名精确匹配: 10 分（MCP: 12 分）
+   - 工具名部分匹配: 5 分（MCP: 6 分）
+   - searchHint 匹配: 4 分
+   - 描述匹配: 2 分
+6. 必选词过滤: "+database" 前缀表示必须包含
+7. 按分数排序，返回 top-N
+ */
 async function searchToolsWithKeywords(
   query: string,
   deferredTools: Tools,
@@ -196,6 +214,7 @@ async function searchToolsWithKeywords(
   // from subagents/post-compaction). Checks deferred first, then falls back
   // to the full tool set — selecting an already-loaded tool is a harmless
   // no-op that lets the model proceed without retry churn.
+  // ! select: 直接选择, AI 也可以用 select:ToolName 精确选择已知工具。这比搜索更快，且支持逗号分隔的批量选择（select:A,B,C）。
   const exactMatch =
     deferredTools.find(t => t.name.toLowerCase() === queryLower) ??
     tools.find(t => t.name.toLowerCase() === queryLower)
@@ -329,6 +348,7 @@ export const ToolSearchTool = buildTool({
     const { query, max_results = 5 } = input
 
     const deferredTools = tools.filter(isDeferredTool)
+    // ! 工具描述的获取是 memoized 的——只在延迟工具集合变化时清除缓存：
     maybeInvalidateCache(deferredTools)
 
     // Check for MCP servers still connecting
@@ -406,9 +426,30 @@ export const ToolSearchTool = buildTool({
     }
 
     // Keyword search
+    /**
+     * 输入: query = "database connection"
+             ↓
+        1. 精确匹配: 检查是否有工具名完全匹配（快速路径）
+        2. MCP 前缀匹配: "mcp__postgres" → 匹配所有 postgres 相关工具
+        3. 关键词拆分: ["database", "connection"]
+        4. 工具名解析:
+           - MCP 工具: "mcp__server__action" → ["server", "action"]
+           - 普通工具: "FileEditTool" → ["file", "edit", "tool"]
+        5. 加权评分:
+           - 工具名精确匹配: 10 分（MCP: 12 分）
+           - 工具名部分匹配: 5 分（MCP: 6 分）
+           - searchHint 匹配: 4 分
+           - 描述匹配: 2 分
+        6. 必选词过滤: "+database" 前缀表示必须包含
+        7. 按分数排序，返回 top-N
+     */
     const matches = await searchToolsWithKeywords(
       query,
       deferredTools,
+      /**
+       * 延迟加载（Deferred Tools）
+不是所有工具都常驻内存。MCP 工具和低频工具被标记为 isDeferredTool，只有在 ToolSearch 选中后才真正加载。这减少了每次 API 调用的 token 开销（工具描述占用大量 token）。
+       */
       tools,
       max_results,
     )
