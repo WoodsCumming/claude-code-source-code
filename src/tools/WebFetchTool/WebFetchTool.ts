@@ -205,12 +205,29 @@ ${DESCRIPTION}`
   renderToolUseMessage,
   renderToolUseProgressMessage,
   renderToolResultMessage,
+  // ! 抓取特定 URL 内容，转换为 Markdown 供 AI 阅读, 这让 AI 可以查阅文档、搜索 Stack Overflow、阅读 GitHub issue——和人类开发者的工作方式一致。
   async call(
     { url, prompt },
     { abortController, options: { isNonInteractiveSession } },
   ) {
     const start = Date.now()
 
+    /**
+     * 调用链:
+  WebFetchTool.call({ url, prompt })
+    → getURLMarkdownContent(url)
+      → validateURL() — 长度≤2000、无用户名密码、公网域名
+      → URL_CACHE 命中检查（15 分钟 TTL LRU，50MB 上限）
+      → checkDomainBlocklist() — 调用 api.anthropic.com/api/web/domain_info 预检
+      → getWithPermittedRedirects() — axios 请求，自定义重定向处理
+        → HTML → Turndown 转 Markdown（懒加载单例，~1.4MB）
+        → 非 HTML → 原始文本
+        → 二进制（PDF 等）→ persistBinaryContent() 保存到磁盘
+    → applyPromptToMarkdown()
+      → 截断到 100K 字符
+      → queryHaiku() 用小模型按 prompt 提取信息
+    → 返回处理后的结果
+     */
     const response = await getURLMarkdownContent(url, abortController)
 
     // Check if we got a redirect to a different host

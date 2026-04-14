@@ -11,6 +11,12 @@
 // See test/utils/sandbox/webfetch-preapproved-separation.test.ts for verification
 // that sandbox network restrictions require explicit user permission rules.
 
+/**
+ * 预批准域名（src/tools/WebFetchTool/preapproved.ts）：
+用户无需手动授权即可抓取的域名列表，包含 ~90 个主流技术文档站点（MDN、Python docs、React docs、AWS docs 等）。列表分为 hostname-only 和 path-prefix 两类，查找复杂度 O(1)。
+对预批准域名，WebFetch 跳过 Haiku 摘要步骤（如果内容是 Markdown 且 < 100K 字符），直接返回原文——因为技术文档本身的结构化程度已经足够好。
+权限模型方面，WebFetch 按 hostname 生成 domain:xxx 规则匹配用户的 allow/deny/ask 规则，支持用户对特定域名配置永久允许或拒绝。
+ */
 export const PREAPPROVED_HOSTS = new Set([
   // Anthropic
   'platform.claude.com',

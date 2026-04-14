@@ -307,6 +307,13 @@ async function ripGrepFileCount(
  * signal — spawn's signal option kills rg. No EAGAIN retry, no internal
  * timeout, stderr is ignored; interactive callers own recovery.
  */
+/**
+ * 
+ripgrep 的流式输出
+对于交互式场景（如 QuickOpen），ripgrep 支持流式输出（ripGrepStream()）：
+rg --files → 逐 chunk 到达 → 按行分割 → onLines(lines) 回调
+不需要等 ripgrep 完成整个搜索——第一批结果在 rg 仍在遍历目录树时就已展示。调用者可以通过 AbortSignal 提前终止搜索（例如找到足够多的结果后）。
+ */
 export async function ripGrepStream(
   args: string[],
   target: string,

@@ -251,6 +251,7 @@ export const WebSearchTool = buildTool({
     }
     return { result: true }
   },
+  // ! WebSearch（src/tools/WebSearchTool/）：调用 Anthropic API 的 web_search_20250305 server tool 搜索互联网
   async call(input, context, _canUseTool, _parentMessage, onProgress) {
     const startTime = performance.now()
     const { query } = input
@@ -265,6 +266,15 @@ export const WebSearchTool = buildTool({
     )
 
     const appState = context.getAppState()
+    /**
+     * 调用链:
+  ApiSearchAdapter.search(query, options)
+    → queryModelWithStreaming() 发起独立的 API 调用
+      → 携带 extraToolSchemas: [BetaWebSearchTool20250305]
+      → API 服务端执行搜索，返回流式事件
+        → server_tool_use / web_search_tool_result / text 交替返回
+    → extractSearchResults() 从 content blocks 提取 SearchResult[]
+     */
     const queryStream = queryModelWithStreaming({
       messages: [userMessage],
       systemPrompt: asSystemPrompt([
@@ -398,6 +408,7 @@ export const WebSearchTool = buildTool({
     )
     return { data }
   },
+  // ! mapToolResultToToolResultBlockParam 将搜索结果格式化为带 markdown 超链接的文本，并附加 “REMINDER” 要求主模型在回复中包含 Sources。
   mapToolResultToToolResultBlockParam(output, toolUseID) {
     const { query, results } = output
 
