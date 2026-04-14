@@ -56,6 +56,13 @@ const PROGRESS_THRESHOLD_MS = 2000; // Show progress after 2 seconds
 // In assistant mode, blocking bash auto-backgrounds after this many ms in the main agent
 const ASSISTANT_BLOCKING_BUDGET_MS = 15_000;
 
+/**
+ * 集合	命令	性质
+BASH_SEARCH_COMMANDS	find, grep, rg, ag, ack, locate, which, whereis	搜索类
+BASH_READ_COMMANDS	cat, head, tail, wc, stat, file, jq, awk, sort, uniq…	读取/分析类
+BASH_LIST_COMMANDS	ls, tree, du	列表类
+BASH_SEMANTIC_NEUTRAL_COMMANDS	echo, printf, true, false, :	语义中性（不影响判定）
+ */
 // Search commands for collapsible display (grep, find, etc.)
 const BASH_SEARCH_COMMANDS = new Set(['find', 'grep', 'rg', 'ag', 'ack', 'locate', 'which', 'whereis']);
 
@@ -121,6 +128,7 @@ export function isSearchOrReadBashCommand(command: string): {
   let hasList = false;
   let hasNonNeutralCommand = false;
   let skipNextAsRedirectTarget = false;
+  // ! 对于复合命令（ls dir && echo "---" && ls dir2），系统拆分后逐段检查——所有非中性段都必须属于上述集合，整条命令才被视为只读。
   for (const part of partsWithOperators) {
     if (skipNextAsRedirectTarget) {
       skipNextAsRedirectTarget = false;
@@ -137,14 +145,14 @@ export function isSearchOrReadBashCommand(command: string): {
     if (!baseCommand) {
       continue;
     }
-    if (BASH_SEMANTIC_NEUTRAL_COMMANDS.has(baseCommand)) {
+    if (BASH_SEMANTIC_NEUTRAL_COMMANDS.has(baseCommand)) {  // ! 跳过中性段
       continue;
     }
     hasNonNeutralCommand = true;
     const isPartSearch = BASH_SEARCH_COMMANDS.has(baseCommand);
     const isPartRead = BASH_READ_COMMANDS.has(baseCommand);
     const isPartList = BASH_LIST_COMMANDS.has(baseCommand);
-    if (!isPartSearch && !isPartRead && !isPartList) {
+    if (!isPartSearch && !isPartRead && !isPartList) {  // ! // 有任何一段不通过 → 非只读
       return {
         isSearch: false,
         isRead: false,
@@ -417,6 +425,25 @@ async function applySedEdit(simulatedEdit: {
     }
   };
 }
+// ! 一条 Bash 命令从 AI 决策到实际执行的完整路径：
+/**
+ * AI 生成 tool_use: { command: "npm test" }
+      ↓
+    BashTool.validateInput()         ← 基础输入校验
+      ↓
+    BashTool.checkPermissions()      ← 权限检查（详见安全体系章节）
+      ├── isReadOnly()? → 自动 allow（只读命令免审批）
+      ├── bashToolHasPermission()    ← AST 解析 + 语义检查 + 规则匹配
+      └── 未匹配 → 弹窗确认
+      ↓
+    BashTool.call() → runShellCommand()
+      ↓
+    shouldUseSandbox(input)          ← 是否需要沙箱包裹
+      ↓
+    Shell.exec(command, { shouldUseSandbox, shouldAutoBackground })
+      ↓
+    spawn(wrapped_command)           ← 实际进程创建
+*/
 export const BashTool = buildTool({
   name: BASH_TOOL_NAME,
   searchHint: 'execute shell commands',
@@ -434,6 +461,7 @@ export const BashTool = buildTool({
   isConcurrencySafe(input) {
     return this.isReadOnly?.(input) ?? false;
   },
+  // ! BashTool 的 isReadOnly() 方法（BashTool.tsx:437）决定一条命令是否被视为”只读”：
   isReadOnly(input) {
     const compoundCommandHasCd = commandHasAnyCd(input.command);
     const result = checkReadOnlyConstraints(input, compoundCommandHasCd);
@@ -445,16 +473,19 @@ export const BashTool = buildTool({
   async preparePermissionMatcher({
     command
   }) {
+    // ! 关键安全点：对于复合命令 ls && git push，解析后拆分为 ["ls", "git push"]，确保 git push 不会因为前半段是只读命令而绕过权限检查。解析失败时采用 fail-safe 策略——假设不安全，触发所有安全 hook。
     // Hook `if` filtering is "no match → skip hook" (deny-like semantics), so
     // compound commands must fire the hook if ANY subcommand matches. Without
     // splitting, `ls && git push` would bypass a `Bash(git *)` security hook.
+    // ! preparePermissionMatcher()（BashTool.tsx:445）在权限检查前用 parseForSecurity() 解析命令结构：
     const parsed = await parseForSecurity(command);
     if (parsed.kind !== 'simple') {
       // parse-unavailable / too-complex: fail safe by running the hook.
-      return () => true;
+      return () => true;  // ! // 解析失败 → fail-safe，触发所有 hook
     }
     // Match on argv (strips leading VAR=val) so `FOO=bar git push` still
     // matches `Bash(git *)`.
+    // ! // 提取子命令列表，剥离 VAR=val 前缀
     const subcommands = parsed.commands.map(c => c.argv.join(' '));
     return pattern => {
       const prefix = permissionRuleExtractPrefix(pattern);
@@ -823,6 +854,18 @@ export const BashTool = buildTool({
     return isOutputLineTruncated(output.stdout) || isOutputLineTruncated(output.stderr);
   }
 } satisfies ToolDef<InputSchema, Out, BashProgress>);
+/**
+ * 
+  为什么用专用工具而不是直接调 shell
+  Claude Code 为文件读写、代码搜索等操作提供了专用工具（Read、Grep、Glob），而不是让 AI 用 cat、grep 等 shell 命令。这不仅是用户体验的选择，更是架构层面的设计决策：
+  维度	专用工具	Bash 命令
+  权限粒度	Read 是只读操作 → 自动放行	Bash: cat file 需要审批整条命令（cat 在只读集合中但走不同路径）
+  输出结构化	返回结构化数据，UI 可渲染 diff、高亮	纯文本输出，无渲染优化
+  性能优化	文件缓存、分页、token 预算控制	每次都是新进程，无缓存
+  并发安全	isConcurrencySafe() 返回 true → 可并行执行	Bash 命令可能有副作用，串行执行
+  安全审计	工具名精确匹配权限规则	需 AST 解析命令结构后匹配
+  isConcurrencySafe()（BashTool.tsx:434）是一个常被忽视但重要的设计——只有只读命令可以在 agentic loop 中并行执行，有副作用的命令必须串行，防止竞态条件。
+ */
 async function* runShellCommand({
   input,
   abortController,
@@ -878,9 +921,29 @@ async function* runShellCommand({
   // Only enable for commands that are allowed to be auto-backgrounded
   // and when background tasks are not disabled
   const shouldAutoBackground = !isBackgroundTasksDisabled && isAutobackgroundingAllowed(command);
+  // ! 进度反馈的流式设计
+  /**
+   * runShellCommand()
+      ├── Shell.exec() 启动子进程
+      ├── 每秒轮询输出文件
+      ├── onProgress(lastLines, allLines, totalLines, totalBytes, isIncomplete)
+      │   ├── 更新 lastProgressOutput / fullOutput
+      │   └── resolveProgress() → 唤醒 generator yield
+      ├── yield { type: 'progress', output, fullOutput, elapsedTimeSeconds }
+      └── return { code, stdout, interrupted, ... }
+      UI 层通过 useToolCallProgress hook 实时展示命令输出。resolveProgress() 信号机制让 generator 在有新数据时才 yield，避免了忙等待。
+   */
   const shellCommand = await exec(command, abortController.signal, 'bash', {
-    timeout: timeoutMs,
+    timeout: timeoutMs, // ! 超时后系统不会直接杀进程——ShellCommand（src/utils/ShellCommand.ts:129）通过 onTimeout 回调通知调用方，由调用方决定是终止还是后台化。
     onProgress(lastLines, allLines, totalLines, totalBytes, isIncomplete) {
+      /**
+       * 命令输出过长时会触发截断，防止把海量日志塞进 AI 的上下文窗口：
+          截断点	位置	行为
+          maxResultSizeChars	工具级（通常 100K 字符）	超长输出在写入消息前截断
+          进度轮询截断	onProgress 回调	只传递最后几行作为进度显示
+          totalBytes 标记	isIncomplete 参数	告知 AI 输出被截断
+          截断不是简单砍尾——isIncomplete 标记确保 AI 知道输出不完整，可以决定是否需要用更精确的命令重新获取。
+       */
       lastProgressOutput = lastLines;
       fullOutput = allLines;
       lastTotalLines = totalLines;
@@ -894,12 +957,27 @@ async function* runShellCommand({
     },
     preventCwdChanges,
     shouldUseSandbox: shouldUseSandbox(input),
-    shouldAutoBackground
+    shouldAutoBackground  // ! 自动后台化:长时间运行的命令可以自动转为后台任务，不阻塞 AI 的 agentic loop：
   });
 
   // Start the command execution
   const resultPromise = shellCommand.result;
 
+  /**
+   * 命令开始执行
+      ↓ 进度轮询
+    15 秒内未完成（ASSISTANT_BLOCKING_BUDGET_MS）
+      ↓
+    检查 isAutobackgroundingAllowed(command)
+      ↓ 允许
+    将前台任务转为后台任务（backgroundExistingForegroundTask）
+      ↓
+    shellCommand.onTimeout → spawnBackgroundTask()
+      ↓
+    返回 taskId 给 AI，AI 可以继续做其他事
+      ↓
+    后台任务完成后通过通知机制汇报结果
+   */
   // Helper to spawn a background task and return its ID
   async function spawnBackgroundTask(): Promise<string> {
     const handle = await spawnShellTask({
