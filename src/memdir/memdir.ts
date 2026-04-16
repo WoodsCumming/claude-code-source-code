@@ -31,11 +31,12 @@ import {
   WHEN_TO_ACCESS_SECTION,
 } from './memoryTypes.js'
 
+// ! 索引文件的截断策略
 export const ENTRYPOINT_NAME = 'MEMORY.md'
-export const MAX_ENTRYPOINT_LINES = 200
+export const MAX_ENTRYPOINT_LINES = 200 // ! 行数上限，超出后追加警告
 // ~125 chars/line at 200 lines. At p97 today; catches long-line indexes that
 // slip past the line cap (p100 observed: 197KB under 200 lines).
-export const MAX_ENTRYPOINT_BYTES = 25_000
+export const MAX_ENTRYPOINT_BYTES = 25_000  // ! 字节上限
 const AUTO_MEM_DISPLAY_NAME = 'auto memory'
 
 export type EntrypointTruncation = {
@@ -196,6 +197,7 @@ function logMemoryDirCounts(
  * Used by both buildMemoryPrompt (agent memory, includes content) and
  * loadMemoryPrompt (system prompt, content injected via user context instead).
  */
+// ! 各类型的详细使用指导以 TYPES_SECTION_INDIVIDUAL（第 113 行）/ TYPES_SECTION_COMBINED（第 37 行）常量形式存储，在 buildMemoryLines() 中注入到 system prompt。
 export function buildMemoryLines(
   displayName: string,
   memoryDir: string,

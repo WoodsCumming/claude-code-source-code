@@ -11,11 +11,12 @@
  * trivial without reasoning through a helper's conditional rendering.
  */
 
+// ! 四种类型定义
 export const MEMORY_TYPES = [
-  'user',
-  'feedback',
-  'project',
-  'reference',
+  'user', // ! 用户角色、偏好、知识背景
+  'feedback', // ! 用户对 Claude 行为的纠正或确认
+  'project',  // ! 当前项目的目标、进度、决策
+  'reference',  // ! 外部系统的资源指针（Linear、Slack 频道等）
 ] as const
 
 export type MemoryType = (typeof MEMORY_TYPES)[number]
@@ -110,6 +111,7 @@ export const TYPES_SECTION_COMBINED: readonly string[] = [
  * No <scope> tags. Examples use plain `[saves X memory: …]`. Prose that
  * only makes sense with a private/team split is reworded.
  */
+// ! 各类型的详细使用指导以 TYPES_SECTION_INDIVIDUAL（第 113 行）/ TYPES_SECTION_COMBINED（第 37 行）常量形式存储，在 buildMemoryLines() 中注入到 system prompt。
 export const TYPES_SECTION_INDIVIDUAL: readonly string[] = [
   '## Types of memory',
   '',
