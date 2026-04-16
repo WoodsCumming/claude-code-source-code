@@ -105,6 +105,7 @@ import type { SkillToolProgress as Progress } from '../../types/tools.js'
 // feature('EXPERIMENTAL_SKILL_SEARCH') guards, so remoteSkillModules is
 // non-null at every call site.
 /* eslint-disable @typescript-eslint/no-require-imports */
+// ! Skill 搜索（实验性 RAG）
 const remoteSkillModules = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? {
       ...(require('../../services/skillSearch/remoteSkillState.js') as typeof import('../../services/skillSearch/remoteSkillState.js')),

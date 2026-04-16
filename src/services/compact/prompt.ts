@@ -16,6 +16,10 @@ const proactiveModule =
 // no text output → falls through to the streaming fallback (2.79% on 4.6 vs
 // 0.01% on 4.5). Putting this FIRST and making it explicit about rejection
 // consequences prevents the wasted turn.
+// ! 压缩提示词
+// 设计原因（L12）：Sonnet 4.6+ adaptive thinking 模型有时会在摘要时尝试调用工具
+// 若工具调用被拒绝，maxTurns: 1 下无文本输出 → 回退流式路径（约 2.79% 概率）
+// 将此段放在最前面并明确说明后果，可将失败率从 2.79% 降至 0.01%
 const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
 
 - Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
@@ -28,6 +32,7 @@ const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any too
 // Two variants: BASE scopes to "the conversation", PARTIAL scopes to "the
 // recent messages". The <analysis> block is a drafting scratchpad that
 // formatCompactSummary() strips before the summary reaches context.
+// ! // 要求在摘要前先进行分析（scratchpad），formatCompactSummary() 会去除此块
 const DETAILED_ANALYSIS_INSTRUCTION_BASE = `Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
 
 1. Chronologically analyze each message and section of the conversation. For each section thoroughly identify:
@@ -58,6 +63,17 @@ const DETAILED_ANALYSIS_INSTRUCTION_PARTIAL = `Before providing your final summa
    - Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
 2. Double-check for technical accuracy and completeness, addressing each required element thoroughly.`
 
+// !
+// 9 段摘要结构（L66-L77）：
+// 1. Primary Request and Intent  — 用户的所有明确请求（完整捕获）
+// 2. Key Technical Concepts      — 技术概念、框架、技术栈
+// 3. Files and Code Sections     — 检查/修改/创建的文件，含完整代码片段
+// 4. Errors and Fixes            — 错误及修复，含用户反馈
+// 5. Problem Solving             — 已解决的问题和进行中的调试
+// 6. All User Messages           — 所有非工具结果的用户消息（完整保留，追踪意图变化）
+// 7. Pending Tasks               — 明确被要求的待办任务
+// 8. Current Work                — 压缩前正在进行的工作（含文件名和代码片段）
+// 9. Optional Next Step          — 下一步行动（含原文引用，防止任务漂移）
 const BASE_COMPACT_PROMPT = `Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
 This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
 
@@ -142,6 +158,7 @@ When you are using compact - please focus on test output and code changes. Inclu
 </example>
 `
 
+// ! // 局部压缩版本：只摘要最近的消息，保留头部历史不变
 const PARTIAL_COMPACT_PROMPT = `Your task is to create a detailed summary of the RECENT portion of the conversation — the messages that follow earlier retained context. The earlier messages are being kept intact and do NOT need to be summarized. Focus your summary on what was discussed, learned, and accomplished in the recent messages only.
 
 ${DETAILED_ANALYSIS_INSTRUCTION_PARTIAL}
@@ -205,6 +222,7 @@ Please provide your summary based on the RECENT messages only (after the retaine
 
 // 'up_to': model sees only the summarized prefix (cache hit). Summary will
 // precede kept recent messages, hence "Context for Continuing Work" section.
+// ! // 压缩到某个时间点：摘要会被插入会话中间，后续消息继续
 const PARTIAL_COMPACT_UP_TO_PROMPT = `Your task is to create a detailed summary of this conversation. This summary will be placed at the start of a continuing session; newer messages that build on this context will follow after your summary (you do not see them here). Summarize thoroughly so that someone reading only your summary and then the newer messages can fully understand what happened and continue the work.
 
 ${DETAILED_ANALYSIS_INSTRUCTION_BASE}
@@ -266,6 +284,7 @@ Here's an example of how your output should be structured:
 Please provide your summary following this structure, ensuring precision and thoroughness in your response.
 `
 
+// ! // 附加在 prompt 末尾的工具禁用提醒（双重保障）
 const NO_TOOLS_TRAILER =
   '\n\nREMINDER: Do NOT call any tools. Respond with plain text only — ' +
   'an <analysis> block followed by a <summary> block. ' +
@@ -291,6 +310,8 @@ export function getPartialCompactPrompt(
 }
 
 export function getCompactPrompt(customInstructions?: string): string {
+   // 组合：NO_TOOLS_PREAMBLE + DETAILED_ANALYSIS_INSTRUCTION_BASE
+   //       + BASE_COMPACT_PROMPT + customInstructions + NO_TOOLS_TRAILER
   let prompt = NO_TOOLS_PREAMBLE + BASE_COMPACT_PROMPT
 
   if (customInstructions && customInstructions.trim() !== '') {
@@ -309,6 +330,8 @@ export function getCompactPrompt(customInstructions?: string): string {
  * @returns The formatted summary with analysis stripped and summary tags replaced by headers
  */
 export function formatCompactSummary(summary: string): string {
+   // 从摘要中去除 <analysis>...</analysis> 块（scratchpad）
+   // 只保留 <summary>...</summary> 内容作为最终摘要
   let formattedSummary = summary
 
   // Strip analysis section — it's a drafting scratchpad that improves summary
@@ -334,6 +357,7 @@ export function formatCompactSummary(summary: string): string {
   return formattedSummary.trim()
 }
 
+// ! 将摘要包装为用户消息格式（压缩后的第一条消息）
 export function getCompactUserSummaryMessage(
   summary: string,
   suppressFollowUpQuestions?: boolean,

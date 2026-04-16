@@ -10,7 +10,7 @@ type ComputeFn = () => string | null | Promise<string | null>
 type SystemPromptSection = {
   name: string
   compute: ComputeFn
-  cacheBreak: boolean
+  cacheBreak: boolean // ! // false = 标准缓存，true = 每次重算
 }
 
 /**
@@ -22,6 +22,8 @@ export function systemPromptSection(
   compute: ComputeFn,
 ): SystemPromptSection {
   return { name, compute, cacheBreak: false }
+  // 结果存入 systemPromptSectionCache（Map，在 bootstrap/state.ts 中维护）
+  // 同一 name 命中缓存时直接返回，不重新执行 compute
 }
 
 /**
@@ -32,9 +34,11 @@ export function systemPromptSection(
 export function DANGEROUS_uncachedSystemPromptSection(
   name: string,
   compute: ComputeFn,
-  _reason: string,
+  _reason: string,  // ! // 必须提供原因，强制文档化为何绕过缓存
 ): SystemPromptSection {
   return { name, compute, cacheBreak: true }
+  // 每次 resolveSystemPromptSections() 都重新执行 compute
+  // 用于 MCP 服务器连接/断开（mid-session 变化）
 }
 
 /**
@@ -47,6 +51,8 @@ export async function resolveSystemPromptSections(
 
   return Promise.all(
     sections.map(async s => {
+      // L50: !s.cacheBreak && cache.has(s.name) → 直接返回缓存值
+      // L53: 否则执行 compute()，写入缓存
       if (!s.cacheBreak && cache.has(s.name)) {
         return cache.get(s.name) ?? null
       }
@@ -63,6 +69,7 @@ export async function resolveSystemPromptSections(
  * evaluation of AFK/fast-mode/cache-editing headers.
  */
 export function clearSystemPromptSections(): void {
-  clearSystemPromptSectionState()
-  clearBetaHeaderLatches()
+  clearSystemPromptSectionState() // ! // 清空 systemPromptSectionCache Map
+  clearBetaHeaderLatches()  // ! // 重置 AFK/fast-mode/cache-editing header 状态
+  // ! // 在 /clear 和 /compact 时调用
 }

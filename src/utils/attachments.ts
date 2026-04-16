@@ -803,6 +803,8 @@ export async function getAttachments(
         !options?.skipSkillDiscovery
           ? [
               maybe('skill_discovery', () =>
+                // ! getTurnZeroSkillDiscovery() — 第 0 轮注入技能发现 attachment
+                // ! 让模型在第一轮就了解可用技能，无需等到调用 SkillTool 时才发现
                 skillSearchModules.prefetch.getTurnZeroSkillDiscovery(
                   input,
                   messages ?? [],
@@ -2193,6 +2195,7 @@ async function getNestedMemoryAttachments(
   return attachments
 }
 
+// ! 检索结果读取与注入
 async function getRelevantMemoryAttachments(
   input: string,
   agents: AgentDefinition[],
@@ -2204,15 +2207,15 @@ async function getRelevantMemoryAttachments(
   // If an agent is @-mentioned, search only its memory dir (isolation).
   // Otherwise search the auto-memory dir.
   const memoryDirs = extractAgentMentions(input).flatMap(mention => {
-    const agentType = mention.replace('agent-', '')
+    const agentType = mention.replace('agent-', '') // ! 若输入中 @agent-xxx，搜索该 Agent 专属记忆目录（隔离）
     const agentDef = agents.find(def => def.agentType === agentType)
     return agentDef?.memory
-      ? [getAgentMemoryDir(agentType, agentDef.memory)]
+      ? [getAgentMemoryDir(agentType, agentDef.memory)] // ! 否则搜索 getAutoMemPath()（全局记忆目录）
       : []
   })
   const dirs = memoryDirs.length > 0 ? memoryDirs : [getAutoMemPath()]
 
-  const allResults = await Promise.all(
+  const allResults = await Promise.all( // ! 并行搜索多个目录（支持多 Agent 同时 @-提及）
     dirs.map(dir =>
       findRelevantMemories(
         input,
@@ -2238,6 +2241,7 @@ async function getRelevantMemoryAttachments(
   if (memories.length === 0) {
     return []
   }
+  // ! return [{ type: 'relevant_memories', memories }]
   return [{ type: 'relevant_memories' as const, memories }]
 }
 
@@ -2256,6 +2260,10 @@ export function collectSurfacedMemories(messages: ReadonlyArray<Message>): {
   let totalBytes = 0
   for (const m of messages) {
     if (m.type === 'attachment' && m.attachment.type === 'relevant_memories') {
+        // 返回已展示的路径集合 + 累计字节数
+        // 用途：
+        //   1. 去重（同一文件本轮不重复展示）
+        //   2. 流量控制（totalBytes 超过 RELEVANT_MEMORIES_CONFIG.MAX_SESSION_BYTES 时停止预取）
       for (const mem of m.attachment.memories) {
         paths.add(mem.path)
         totalBytes += mem.content.length
@@ -2276,6 +2284,8 @@ export function collectSurfacedMemories(messages: ReadonlyArray<Message>): {
  *
  * Exported for direct testing without mocking the ranker + GB gates.
  */
+  // 读取每个记忆文件内容（有行数/字节数上限）
+  // 超限时追加截断提示 + 文件路径（模型可用 Read 工具查看完整内容）
 export async function readMemoriesForSurfacing(
   selected: ReadonlyArray<{ path: string; mtimeMs: number }>,
   signal?: AbortSignal,
@@ -2324,6 +2334,8 @@ export async function readMemoriesForSurfacing(
  * Header string for a relevant-memory block.  Exported so messages.ts
  * can fall back for resumed sessions where the stored header is missing.
  */
+  // 格式：<system-reminder>\n<memory path="..." mtime="...">\n...
+  // 作为每条记忆的标题注入对话
 export function memoryHeader(path: string, mtimeMs: number): string {
   const staleness = memoryFreshnessText(mtimeMs)
   return staleness
@@ -2343,6 +2355,8 @@ export function memoryHeader(path: string, mtimeMs: number): string {
  * in-flight request and emitting terminal telemetry without instrumenting
  * each of the ~13 return sites inside the while loop.
  */
+  // Disposable 接口，支持 `using` 语法（自动清理）
+  // settled: Promise<boolean> — 预取是否完成
 export type MemoryPrefetch = {
   promise: Promise<Attachment[]>
   /** Set by promise.finally(). null until the promise settles. */
@@ -2369,6 +2383,7 @@ export function startRelevantMemoryPrefetch(
     return undefined
   }
 
+  // ! 提取最后一条真实用户消息（跳过 isMeta 系统注入）
   const lastUserMessage = messages.findLast(m => m.type === 'user' && !m.isMeta)
   if (!lastUserMessage) {
     return undefined
@@ -2380,13 +2395,17 @@ export function startRelevantMemoryPrefetch(
     return undefined
   }
 
+  // ! 收集已展示记忆，传入去重集合
   const surfaced = collectSurfacedMemories(messages)
+  // ! surfaced.totalBytes >= MAX_SESSION_BYTES → 停止预取（会话记忆配额耗尽）
   if (surfaced.totalBytes >= RELEVANT_MEMORIES_CONFIG.MAX_SESSION_BYTES) {
     return undefined
   }
 
   // Chained to the turn-level abort so user Escape cancels the sideQuery
   // immediately, not just on [Symbol.dispose] when queryLoop exits.
+  // ! 异步启动，返回 MemoryPrefetch handle
+  // ! 下一轮 API 请求时 await handle.settled，将结果作为 attachment 注入
   const controller = createChildAbortController(toolUseContext.abortController)
   const firedAt = Date.now()
   const promise = getRelevantMemoryAttachments(

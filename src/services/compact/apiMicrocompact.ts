@@ -34,7 +34,7 @@ const TOOLS_CLEARABLE_USES = [
 // Context management strategy types matching API documentation
 export type ContextEditStrategy =
   | {
-      type: 'clear_tool_uses_20250919'
+      type: 'clear_tool_uses_20250919'  // ! // 清除旧 tool_use 块
       trigger?: {
         type: 'input_tokens'
         value: number
@@ -51,7 +51,7 @@ export type ContextEditStrategy =
       }
     }
   | {
-      type: 'clear_thinking_20251015'
+      type: 'clear_thinking_20251015' // ! // 清除旧 thinking 块
       keep: { type: 'thinking_turns'; value: number } | 'all'
     }
 
@@ -66,6 +66,8 @@ export function getAPIContextManagement(options?: {
   isRedactThinkingActive?: boolean
   clearAllThinking?: boolean
 }): ContextManagementConfig | undefined {
+  // 根据是否有 thinking 块、是否空闲超 1 小时等条件
+  // 组合 clear_thinking + clear_tool_uses 策略
   const {
     hasThinking = false,
     isRedactThinkingActive = false,

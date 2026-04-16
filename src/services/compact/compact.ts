@@ -119,17 +119,17 @@ import {
   getPartialCompactPrompt,
 } from './prompt.js'
 
-export const POST_COMPACT_MAX_FILES_TO_RESTORE = 5
+export const POST_COMPACT_MAX_FILES_TO_RESTORE = 5  // ! 压缩后最多恢复 5 个文件
 // ! 压缩后可用 token 预算
-export const POST_COMPACT_TOKEN_BUDGET = 50_000
-export const POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000
+export const POST_COMPACT_TOKEN_BUDGET = 50_000 // ! 文件恢复总 token 预算
+export const POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000 // ! 单文件 token 上限
 // Skills can be large (verify=18.7KB, claude-api=20.1KB). Previously re-injected
 // unbounded on every compact → 5-10K tok/compact. Per-skill truncation beats
 // dropping — instructions at the top of a skill file are usually the critical
 // part. Budget sized to hold ~5 skills at the per-skill cap.
-export const POST_COMPACT_MAX_TOKENS_PER_SKILL = 5_000
-export const POST_COMPACT_SKILLS_TOKEN_BUDGET = 25_000
-const MAX_COMPACT_STREAMING_RETRIES = 2
+export const POST_COMPACT_MAX_TOKENS_PER_SKILL = 5_000  // ! 单技能 token 上限
+export const POST_COMPACT_SKILLS_TOKEN_BUDGET = 25_000  // ! 技能恢复总 token 预算
+const MAX_COMPACT_STREAMING_RETRIES = 2 // ! 流式摘要失败时的重试次数
 
 /**
  * Strip image blocks from user messages before sending for compaction.
@@ -225,7 +225,7 @@ export function stripReinjectedAttachments(messages: Message[]): Message[] {
 
 export const ERROR_MESSAGE_NOT_ENOUGH_MESSAGES =
   'Not enough messages to compact.'
-const MAX_PTL_RETRIES = 3
+const MAX_PTL_RETRIES = 3 // ! prompt_too_long 时截断重试次数
 const PTL_RETRY_MARKER = '[earlier conversation truncated for compaction retry]'
 
 /**
@@ -241,6 +241,7 @@ const PTL_RETRY_MARKER = '[earlier conversation truncated for compaction retry]'
  * this helper is the dumb-but-safe fallback for the proactive/manual path
  * that wasn't migrated in bfdb472f's unification.
  */
+// ! 截断最旧消息后重试
 export function truncateHeadForPTLRetry(
   messages: Message[],
   ptlResponse: AssistantMessage,
@@ -297,6 +298,7 @@ export const ERROR_MESSAGE_USER_ABORT = 'API Error: Request was aborted.'
 export const ERROR_MESSAGE_INCOMPLETE_RESPONSE =
   'Compaction interrupted · This may be due to network issues — please try again.'
 
+  // ! // 压缩结果，包含：摘要文本、压缩前消息数、压缩后消息列表等
 export interface CompactionResult {
   boundaryMarker: SystemMessage
   summaryMessages: UserMessage[]
@@ -315,6 +317,7 @@ export interface CompactionResult {
  * Lets the tengu_compact event disambiguate same-chain loops (H2) from
  * cross-agent (H1/H5) and manual-vs-auto (H3) compactions without joins.
  */
+// ! // 重压缩信息（partial compact 场景使用）
 export type RecompactionInfo = {
   isRecompactionInChain: boolean
   turnsSincePreviousCompact: number
@@ -411,6 +414,7 @@ export async function compactConversation(
 
     // Execute PreCompact hooks
     context.setSDKStatus?.('compacting')
+    // ! 执行 PreCompact hooks，可注入自定义指令
     const hookResult = await executePreCompactHooks(
       {
         trigger: isAutoCompact ? 'auto' : 'manual',
@@ -418,6 +422,7 @@ export async function compactConversation(
       },
       context.abortController.signal,
     )
+    // ! 合并 hook 注入的指令与用户自定义指令
     customInstructions = mergeHookInstructions(
       customInstructions,
       hookResult.newCustomInstructions,
@@ -433,12 +438,14 @@ export async function compactConversation(
     // Experiment (Jan 2026) confirmed: false path is 98% cache miss, costs ~0.76% of
     // fleet cache_creation (~38B tok/day), concentrated in ephemeral envs (CCR/GHA/SDK)
     // with cold GB cache and 3P providers where GB is disabled. GB gate kept as kill-switch.
+    // ! //        → 摘要请求复用主对话的 prompt cache prefix
+    // ! //        → 实验验证：false 路径 98% cache miss，每天浪费约 38B token
     const promptCacheSharingEnabled = getFeatureValue_CACHED_MAY_BE_STALE(
       'tengu_compact_cache_prefix',
       true,
     )
 
-    const compactPrompt = getCompactPrompt(customInstructions)
+    const compactPrompt = getCompactPrompt(customInstructions)  // ! 构建摘要请求文本
     const summaryRequest = createUserMessage({
       content: compactPrompt,
     })
@@ -448,8 +455,8 @@ export async function compactConversation(
     let summaryResponse: AssistantMessage
     let summary: string | null
     let ptlAttempts = 0
-    for (;;) {
-      summaryResponse = await streamCompactSummary({
+    for (;;) {  // ! 循环（处理 prompt_too_long 重试）
+      summaryResponse = await streamCompactSummary({  // ! 流式调用 Sonnet 生成摘要
         messages: messagesToSummarize,
         summaryRequest,
         appState,
@@ -465,7 +472,7 @@ export async function compactConversation(
       ptlAttempts++
       const truncated =
         ptlAttempts <= MAX_PTL_RETRIES
-          ? truncateHeadForPTLRetry(messagesToSummarize, summaryResponse)
+          ? truncateHeadForPTLRetry(messagesToSummarize, summaryResponse) // ! 截断最旧消息后重试
           : null
       if (!truncated) {
         logEvent('tengu_compact_failed', {
@@ -530,33 +537,34 @@ export async function compactConversation(
     // early-return in getSkillListingAttachments.
 
     // Run async attachment generation in parallel
+    // ! 并行生成压缩后的附件：
     const [fileAttachments, asyncAgentAttachments] = await Promise.all([
-      createPostCompactFileAttachments(
-        preCompactReadFileState,
+      createPostCompactFileAttachments( // ! 恢复最近读取的文件
+        preCompactReadFileState,  
         context,
         POST_COMPACT_MAX_FILES_TO_RESTORE,
       ),
-      createAsyncAgentAttachmentsIfNeeded(context),
+      createAsyncAgentAttachmentsIfNeeded(context), // ! 恢复异步 Agent 结果
     ])
 
     const postCompactFileAttachments: AttachmentMessage[] = [
       ...fileAttachments,
       ...asyncAgentAttachments,
     ]
-    const planAttachment = createPlanAttachmentIfNeeded(context.agentId)
+    const planAttachment = createPlanAttachmentIfNeeded(context.agentId)  // ! 恢复计划文件（Plan Mode）
     if (planAttachment) {
       postCompactFileAttachments.push(planAttachment)
     }
 
     // Add plan mode instructions if currently in plan mode, so the model
     // continues operating in plan mode after compaction
-    const planModeAttachment = await createPlanModeAttachmentIfNeeded(context)
+    const planModeAttachment = await createPlanModeAttachmentIfNeeded(context)  // ! 恢复 Plan Mode 指令
     if (planModeAttachment) {
       postCompactFileAttachments.push(planModeAttachment)
     }
 
     // Add skill attachment if skills were invoked in this session
-    const skillAttachment = createSkillAttachmentIfNeeded(context.agentId)
+    const skillAttachment = createSkillAttachmentIfNeeded(context.agentId)  // ! 恢复已调用的技能
     if (skillAttachment) {
       postCompactFileAttachments.push(skillAttachment)
     }
@@ -565,7 +573,7 @@ export async function compactConversation(
     // state so the model has tool/instruction context on the first
     // post-compact turn. Empty message history → diff against nothing →
     // announces the full set.
-    for (const att of getDeferredToolsDeltaAttachment(
+    for (const att of getDeferredToolsDeltaAttachment(  // ! 重新宣告可用工具列表
       context.options.tools,
       context.options.mainLoopModel,
       [],
@@ -573,10 +581,10 @@ export async function compactConversation(
     )) {
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
-    for (const att of getAgentListingDeltaAttachment(context, [])) {
+    for (const att of getAgentListingDeltaAttachment(context, [])) {  // ! 重新宣告可用 Agent 列表
       postCompactFileAttachments.push(createAttachmentMessage(att))
     }
-    for (const att of getMcpInstructionsDeltaAttachment(
+    for (const att of getMcpInstructionsDeltaAttachment(  // ! 重新宣告 MCP 指令
       context.options.mcpClients,
       context.options.tools,
       context.options.mainLoopModel,
@@ -770,6 +778,7 @@ export async function compactConversation(
  * Direction 'up_to': summarizes messages before the index, keeps later ones.
  *   Prompt cache is invalidated since the summary precedes the kept messages.
  */
+// !   // 局部压缩：只压缩消息列表的一部分（保留头部或尾部）用于超长会话中的渐进式压缩
 export async function partialCompactConversation(
   allMessages: Message[],
   pivotIndex: number,
@@ -1134,6 +1143,10 @@ export function createCompactCanUseTool(): CanUseToolFn {
   })
 }
 
+// ! 
+// - 摘要请求使用与主对话相同的 cache prefix
+// - 避免冷启动 cache miss（实验数据：false 路径 98% cache miss）
+// - 节省约 0.76% 的 fleet cache_creation token
 async function streamCompactSummary({
   messages,
   summaryRequest,
@@ -1414,11 +1427,13 @@ async function streamCompactSummary({
  * @returns Array of attachment messages for the most recently accessed files that fit within token budget
  */
 export async function createPostCompactFileAttachments(
-  readFileState: Record<string, { content: string; timestamp: number }>,
+  readFileState: Record<string, { content: string; timestamp: number }>,  // ! // 压缩前的文件读取状态快照
   toolUseContext: ToolUseContext,
   maxFiles: number,
   preservedMessages: Message[] = [],
 ): Promise<AttachmentMessage[]> {
+  // 从 preCompactReadFileState 中选取最近读取的文件重新注入
+  // 按 token 预算（POST_COMPACT_TOKEN_BUDGET = 50K）截断
   const preservedReadPaths = collectReadToolFilePaths(preservedMessages)
   const recentFiles = Object.entries(readFileState)
     .map(([filename, state]) => ({ filename, ...state }))
@@ -1471,6 +1486,7 @@ export async function createPostCompactFileAttachments(
 export function createPlanAttachmentIfNeeded(
   agentId?: AgentId,
 ): AttachmentMessage | null {
+  // ! // 若当前 Agent 有活跃计划文件，重新注入
   const planContent = getPlan(agentId)
 
   if (!planContent) {
@@ -1495,6 +1511,12 @@ export function createPlanAttachmentIfNeeded(
 export function createSkillAttachmentIfNeeded(
   agentId?: string,
 ): AttachmentMessage | null {
+  // L1498: getInvokedSkillsForAgent(agentId) — 获取该 Agent 调用过的技能
+  // L1509: 按 invokedAt 倒序排列（最近调用的优先保留）
+  // L1513: truncateToTokens(content, POST_COMPACT_MAX_TOKENS_PER_SKILL)
+  //        — 每个技能最多 5K tokens（保留头部，通常是使用说明）
+  // L1520: 总预算 POST_COMPACT_SKILLS_TOKEN_BUDGET = 25K tokens
+  // L1531: 返回 type: 'invoked_skills' attachment
   const invokedSkills = getInvokedSkillsForAgent(agentId)
 
   if (invokedSkills.size === 0) {

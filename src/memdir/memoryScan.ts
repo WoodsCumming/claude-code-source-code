@@ -10,16 +10,17 @@ import { parseFrontmatter } from '../utils/frontmatterParser.js'
 import { readFileInRange } from '../utils/readFileInRange.js'
 import { type MemoryType, parseMemoryType } from './memoryTypes.js'
 
+// ! 记忆目录扫描
 export type MemoryHeader = {
-  filename: string
-  filePath: string
-  mtimeMs: number
-  description: string | null
+  filename: string  // ! 相对路径（如 user_role.md）
+  filePath: string  // ! 绝对路径
+  mtimeMs: number   // ! 修改时间（用于排序和新鲜度判断）
+  description: string | null  // ! // frontmatter.description（RAG 检索依赖此字段）
   type: MemoryType | undefined
 }
 
-const MAX_MEMORY_FILES = 200
-const FRONTMATTER_MAX_LINES = 30
+const MAX_MEMORY_FILES = 200  // ! 最多扫描 200 个文件
+const FRONTMATTER_MAX_LINES = 30  // ! 每个文件只读前 30 行（仅需 frontmatter）
 
 /**
  * Scan a memory directory for .md files, read their frontmatter, and return
@@ -37,15 +38,15 @@ export async function scanMemoryFiles(
   signal: AbortSignal,
 ): Promise<MemoryHeader[]> {
   try {
-    const entries = await readdir(memoryDir, { recursive: true })
-    const mdFiles = entries.filter(
+    const entries = await readdir(memoryDir, { recursive: true }) // ! 递归扫描
+    const mdFiles = entries.filter( // ! 过滤 .md 文件，排除 MEMORY.md 本身
       f => f.endsWith('.md') && basename(f) !== 'MEMORY.md',
     )
 
-    const headerResults = await Promise.allSettled(
+    const headerResults = await Promise.allSettled( // ! 并行读取所有文件的 frontmatter
       mdFiles.map(async (relativePath): Promise<MemoryHeader> => {
         const filePath = join(memoryDir, relativePath)
-        const { content, mtimeMs } = await readFileInRange(
+        const { content, mtimeMs } = await readFileInRange( // ! 只读前 30 行
           filePath,
           0,
           FRONTMATTER_MAX_LINES,
@@ -69,8 +70,8 @@ export async function scanMemoryFiles(
           r.status === 'fulfilled',
       )
       .map(r => r.value)
-      .sort((a, b) => b.mtimeMs - a.mtimeMs)
-      .slice(0, MAX_MEMORY_FILES)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)  // ! 按 mtimeMs 倒序排列（最新优先）
+      .slice(0, MAX_MEMORY_FILES) // ! 最多 200 个
   } catch {
     return []
   }
@@ -81,6 +82,8 @@ export async function scanMemoryFiles(
  * [type] filename (timestamp): description. Used by both the recall
  * selector prompt and the extraction-agent prompt.
  */
+// ! 格式：- [type] filename (ISO时间戳): description
+// ! 供 Sonnet 排序器使用
 export function formatMemoryManifest(memories: MemoryHeader[]): string {
   return memories
     .map(m => {

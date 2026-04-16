@@ -27,7 +27,7 @@ import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 
 // Reserve this many tokens for output during compaction
 // Based on p99.99 of compact summary output being 17,387 tokens.
-const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000
+const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000  // ! // 为摘要输出预留的最大 token 数
 
 // Returns the context window size minus the max output tokens for the model
 export function getEffectiveContextWindowSize(model: string): number {
@@ -52,22 +52,22 @@ export type AutoCompactTrackingState = {
   compacted: boolean
   turnCounter: number
   // Unique ID per turn
-  turnId: string
+  turnId: string  // ! // 每轮唯一 ID
   // Consecutive autocompact failures. Reset on success.
   // Used as a circuit breaker to stop retrying when the context is
   // irrecoverably over the limit (e.g., prompt_too_long).
-  consecutiveFailures?: number
+  consecutiveFailures?: number  // ! // 连续失败次数（熔断计数器）
 }
 
-export const AUTOCOMPACT_BUFFER_TOKENS = 13_000
-export const WARNING_THRESHOLD_BUFFER_TOKENS = 20_000
-export const ERROR_THRESHOLD_BUFFER_TOKENS = 20_000
-export const MANUAL_COMPACT_BUFFER_TOKENS = 3_000
+export const AUTOCOMPACT_BUFFER_TOKENS = 13_000 // ! // 自动压缩安全边距
+export const WARNING_THRESHOLD_BUFFER_TOKENS = 20_000 // ! 用户警告阈值（显示 token 警告 UI）
+export const ERROR_THRESHOLD_BUFFER_TOKENS = 20_000 // ! // 错误阈值
+export const MANUAL_COMPACT_BUFFER_TOKENS = 3_000 // ! // 手动 /compact 时的边距
 
 // Stop trying autocompact after this many consecutive failures.
 // BQ 2026-03-10: 1,279 sessions had 50+ consecutive failures (up to 3,272)
 // in a single session, wasting ~250K API calls/day globally.
-const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3
+const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3  // ! // 熔断阈值
 
 export function getAutoCompactThreshold(model: string): number {
   const effectiveContextWindow = getEffectiveContextWindowSize(model)
@@ -94,11 +94,11 @@ export function calculateTokenWarningState(
   tokenUsage: number,
   model: string,
 ): {
-  percentLeft: number
-  isAboveWarningThreshold: boolean
-  isAboveErrorThreshold: boolean
-  isAboveAutoCompactThreshold: boolean
-  isAtBlockingLimit: boolean
+  percentLeft: number // ! 剩余 token 百分比（0-100）
+  isAboveWarningThreshold: boolean  // ! 是否显示警告
+  isAboveErrorThreshold: boolean  // ! 是否显示错误
+  isAboveAutoCompactThreshold: boolean  // ! 是否触发自动压缩
+  isAtBlockingLimit: boolean  // ! 是否已到阻塞限制
 } {
   const autoCompactThreshold = getAutoCompactThreshold(model)
   const threshold = isAutoCompactEnabled()
@@ -147,13 +147,16 @@ export function calculateTokenWarningState(
 export function isAutoCompactEnabled(): boolean {
   if (isEnvTruthy(process.env.DISABLE_COMPACT)) {
     return false
+    // ! DISABLE_COMPACT → false
   }
   // Allow disabling just auto-compact (keeps manual /compact working)
   if (isEnvTruthy(process.env.DISABLE_AUTO_COMPACT)) {
     return false
+    // ! DISABLE_AUTO_COMPACT → false（只禁用自动，手动 /compact 仍可用）
   }
   // Check if user has disabled auto-compact in their settings
   const userConfig = getGlobalConfig()
+  // ! userConfig.autoCompactEnabled（用户设置）
   return userConfig.autoCompactEnabled
 }
 
@@ -164,12 +167,13 @@ export async function shouldAutoCompact(
   // Snip removes messages but the surviving assistant's usage still reflects
   // pre-snip context, so tokenCountWithEstimation can't see the savings.
   // Subtract the rough-delta that snip already computed.
-  snipTokensFreed = 0,
+  snipTokensFreed = 0,  // ! // Snip 已释放的 token 数（避免重复计算）
 ): Promise<boolean> {
   // Recursion guards. session_memory and compact are forked agents that
   // would deadlock.
   if (querySource === 'session_memory' || querySource === 'compact') {
     return false
+    // ! 防止递归死锁）
   }
   // marble_origami is the ctx-agent — if ITS context blows up and
   // autocompact fires, runPostCompactCleanup calls resetContextCollapse()
@@ -193,6 +197,7 @@ export async function shouldAutoCompact(
   // trySessionMemoryCompaction in the query loop — the /compact call site
   // still tries session memory first. Revisit if reactive-only graduates.
   if (feature('REACTIVE_COMPACT')) {
+    // ! 抑制主动压缩，依赖 API 返回 prompt_too_long
     if (getFeatureValue_CACHED_MAY_BE_STALE('tengu_cobalt_raccoon', false)) {
       return false
     }
@@ -285,6 +290,7 @@ export async function autoCompactIfNeeded(
   }
 
   // EXPERIMENT: Try session memory compaction first
+  // ! // 先尝试 trySessionMemoryCompaction()（轻量，提取记忆后清空历史）
   const sessionMemoryResult = await trySessionMemoryCompaction(
     messages,
     toolUseContext.agentId,
@@ -310,6 +316,7 @@ export async function autoCompactIfNeeded(
   }
 
   try {
+    // ! 若失败则调用 compactConversation()（全量摘要压缩)
     const compactionResult = await compactConversation(
       messages,
       toolUseContext,
@@ -340,6 +347,7 @@ export async function autoCompactIfNeeded(
     // next query loop iteration can skip futile retry attempts.
     const prevFailures = tracking?.consecutiveFailures ?? 0
     const nextFailures = prevFailures + 1
+    // ! 连续失败 ≥ MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES → 熔断，停止尝试
     if (nextFailures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
       logForDebugging(
         `autocompact: circuit breaker tripped after ${nextFailures} consecutive failures — skipping future attempts this session`,

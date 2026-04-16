@@ -59,6 +59,7 @@ export async function fetchSystemPromptParts({
   systemContext: { [k: string]: string }
 }> {
   const [defaultSystemPrompt, userContext, systemContext] = await Promise.all([ // ! 三路并行
+    // ! // L62: customSystemPrompt 存在时跳过 getSystemPrompt()（自定义 prompt 完全替代）
     customSystemPrompt !== undefined
       ? Promise.resolve([])
       : getSystemPrompt(
@@ -68,6 +69,7 @@ export async function fetchSystemPromptParts({
           mcpClients,
         ),
     getUserContext(),
+    // ! // L71: customSystemPrompt 存在时跳过 getSystemContext()（不需要 git 状态）
     customSystemPrompt !== undefined ? Promise.resolve({}) : getSystemContext(),
   ])
   return { defaultSystemPrompt, userContext, systemContext }

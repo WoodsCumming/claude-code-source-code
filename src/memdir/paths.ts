@@ -27,6 +27,10 @@ import {
  *   4. autoMemoryEnabled in settings.json (supports project-level opt-out)
  *   5. Default: enabled
  */
+  // 检查顺序（短路求值）：
+  // 1. CLAUDE_CODE_DISABLE_AUTO_MEMORY env var → false
+  // 2. settings.autoMemory 用户设置
+  // 3. feature gate 兜底
 export function isAutoMemoryEnabled(): boolean {
   const envVal = process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY
   if (isEnvTruthy(envVal)) {
@@ -66,6 +70,8 @@ export function isAutoMemoryEnabled(): boolean {
  * live inside this helper because feature() only tree-shakes when used
  * directly in an `if` condition.
  */
+// feature('EXTRACT_MEMORIES') 启用时
+// 后台 Agent 自动从对话中提取记忆
 export function isExtractModeActive(): boolean {
   if (!getFeatureValue_CACHED_MAY_BE_STALE('tengu_passport_quail', false)) {
     return false
@@ -82,6 +88,7 @@ export function isExtractModeActive(): boolean {
  *   1. CLAUDE_CODE_REMOTE_MEMORY_DIR env var (explicit override, set in CCR)
  *   2. ~/.claude (default config home)
  */
+// ! // 返回 ~/.claude/projects/<cwd-slug>/
 export function getMemoryBaseDir(): string {
   if (process.env.CLAUDE_CODE_REMOTE_MEMORY_DIR) {
     return process.env.CLAUDE_CODE_REMOTE_MEMORY_DIR
@@ -220,6 +227,9 @@ function getAutoMemBase(): string {
  * env vars / settings.json / CLAUDE_CONFIG_DIR are session-stable in
  * production and covered by per-test cache.clear.
  */
+  // 返回 ~/.claude/projects/<cwd-slug>/memory/
+  // slug 由 cwd 绝对路径转义生成（/ → -），保证跨会话稳定
+  // memoize：进程内只计算一次
 export const getAutoMemPath = memoize(
   (): string => {
     const override = getAutoMemPathOverride() ?? getAutoMemPathSetting()
@@ -243,6 +253,8 @@ export const getAutoMemPath = memoize(
  * as it works. A separate nightly /dream skill distills these logs into
  * topic files + MEMORY.md.
  */
+  // 返回 ~/.claude/projects/<slug>/memory/logs/YYYY/MM/YYYY-MM-DD.md
+  // KAIROS 助手模式专用
 export function getAutoMemDailyLogPath(date: Date = new Date()): string {
   const yyyy = date.getFullYear().toString()
   const mm = (date.getMonth() + 1).toString().padStart(2, '0')
@@ -254,6 +266,7 @@ export function getAutoMemDailyLogPath(date: Date = new Date()): string {
  * Returns the auto-memory entrypoint (MEMORY.md inside the auto-memory dir).
  * Follows the same resolution order as getAutoMemPath().
  */
+// 返回 ~/.claude/projects/<slug>/memory/MEMORY.md
 export function getAutoMemEntrypoint(): string {
   return join(getAutoMemPath(), AUTO_MEM_ENTRYPOINT_NAME)
 }
@@ -271,6 +284,7 @@ export function getAutoMemEntrypoint(): string {
  * excluded — see getAutoMemPathSetting), and hasAutoMemPathOverride() remains
  * false for it.
  */
+// ! 判断路径是否在记忆目录内（用于过滤注入到 getUserContext 的文件）
 export function isAutoMemPath(absolutePath: string): boolean {
   // SECURITY: Normalize to prevent path traversal bypasses via .. segments
   const normalizedPath = normalize(absolutePath)

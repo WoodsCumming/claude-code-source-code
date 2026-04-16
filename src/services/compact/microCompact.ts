@@ -33,20 +33,22 @@ import {
 // sessionStorage → utils/messages → services/api/errors, completing a
 // circular-deps loop back through this file via promptCacheBreakDetection.
 // Drift is caught by a test asserting equality with the source-of-truth.
+// ! 替换旧工具结果的占位符文本
 export const TIME_BASED_MC_CLEARED_MESSAGE = '[Old tool result content cleared]'
 
-const IMAGE_MAX_TOKEN_SIZE = 2000
+const IMAGE_MAX_TOKEN_SIZE = 2000 // ! // 图片 token 超此值时也被清除
 
 // Only compact these tools
 const COMPACTABLE_TOOLS = new Set<string>([
-  FILE_READ_TOOL_NAME,
-  ...SHELL_TOOL_NAMES,
-  GREP_TOOL_NAME,
-  GLOB_TOOL_NAME,
-  WEB_SEARCH_TOOL_NAME,
-  WEB_FETCH_TOOL_NAME,
-  FILE_EDIT_TOOL_NAME,
-  FILE_WRITE_TOOL_NAME,
+  FILE_READ_TOOL_NAME,  // ! Read  — 文件内容可重新读取
+  ...SHELL_TOOL_NAMES,  // ! Bash  — 命令输出可重新执行
+  GREP_TOOL_NAME,       // ! Grep  — 搜索结果可重新搜索
+  GLOB_TOOL_NAME,       // ! Glob  — 文件列表可重新获取
+  WEB_SEARCH_TOOL_NAME, // ! WebSearch
+  WEB_FETCH_TOOL_NAME,  // ! WebFetch
+  FILE_EDIT_TOOL_NAME,  // ! Edit  — 编辑结果（diff）可重新生成
+  FILE_WRITE_TOOL_NAME, // ! Write
+  // ! 注意：AgentTool、SkillTool 等不在此列 — 其结果不可轻易重现
 ])
 
 // --- Cached microcompact state (ant-only, gated by feature('CACHED_MICROCOMPACT')) ---
@@ -204,6 +206,7 @@ export function estimateMessageTokens(messages: Message[]): number {
   return Math.ceil(totalTokens * (4 / 3))
 }
 
+/* cache editing API 所需的编辑指令 */
 export type PendingCacheEdits = {
   trigger: 'auto'
   deletedToolIds: string[]
@@ -215,7 +218,7 @@ export type PendingCacheEdits = {
 export type MicrocompactResult = {
   messages: Message[]
   compactionInfo?: {
-    pendingCacheEdits?: PendingCacheEdits
+    pendingCacheEdits?: PendingCacheEdits // ! // Cached MC 路径才有此字段
   }
 }
 
@@ -256,6 +259,7 @@ export async function microcompactMessages(
   querySource?: QuerySource,
 ): Promise<MicrocompactResult> {
   // Clear suppression flag at start of new microcompact attempt
+  // ! 重置压缩警告抑制状态
   clearCompactWarningSuppression()
 
   // Time-based trigger runs first and short-circuits. If the gap since the
@@ -264,6 +268,7 @@ export async function microcompactMessages(
   // tool results now, before the request, to shrink what gets rewritten.
   // Cached MC (cache-editing) is skipped when this fires: editing assumes a
   // warm cache, and we just established it's cold.
+  // ! 时间触发路径（优先）
   const timeBasedResult = maybeTimeBasedMicrocompact(messages, querySource)
   if (timeBasedResult) {
     return timeBasedResult
@@ -273,15 +278,16 @@ export async function microcompactMessages(
   // (session_memory, prompt_suggestion, etc.) from registering their
   // tool_results in the global cachedMCState, which would cause the main
   // thread to try deleting tools that don't exist in its own conversation.
-  if (feature('CACHED_MICROCOMPACT')) {
+  if (feature('CACHED_MICROCOMPACT')) { // ! Cached MC 路径（ant-only）
     const mod = await getCachedMCModule()
     const model = toolUseContext?.options.mainLoopModel ?? getMainLoopModel()
     if (
       mod.isCachedMicrocompactEnabled() &&
       mod.isModelSupportedForCacheEditing(model) &&
-      isMainThreadSource(querySource)
+      isMainThreadSource(querySource) // ! （只对主线程，防止子 Agent 污染全局状态）
     ) {
-      return await cachedMicrocompactPath(messages, querySource)
+      return await cachedMicrocompactPath(messages, querySource)  // ! 通过 API cache editing 删除旧 tool_result
+      // ! 返回 PendingCacheEdits，由调用方在下次 API 请求时附带
     }
   }
 
@@ -289,6 +295,9 @@ export async function microcompactMessages(
   // For contexts where cached microcompact is not available (external builds,
   // non-ant users, unsupported models, sub-agents), no compaction happens here;
   // autocompact handles context pressure instead.
+
+  // Legacy path（外部构建、非 ant 用户、不支持的模型）
+  //   → { messages }（不做任何压缩，由 autoCompactIfNeeded 处理
   return { messages }
 }
 
@@ -429,9 +438,11 @@ export function evaluateTimeBasedTrigger(
   // callers (/context, /compact, analyzeContext) invoke microcompactMessages
   // without a source for analysis-only purposes — they should not trigger.
   if (!config.enabled || !querySource || !isMainThreadSource(querySource)) {
+    // ! 要求显式 main-thread querySource（undefined 不触发，防止分析调用误触发）
     return null
   }
   const lastAssistant = messages.findLast(m => m.type === 'assistant')
+  // ! findLast(m => m.type === 'assistant') — 找最后一条 assistant 消息
   if (!lastAssistant) {
     return null
   }
@@ -443,6 +454,11 @@ export function evaluateTimeBasedTrigger(
   return { gapMinutes, config }
 }
 
+  //   - 找到最后一条 assistant 消息的时间戳
+  //   - 计算 gapMinutes = (Date.now() - lastAssistant.timestamp) / 60_000
+  //   - gapMinutes >= config.gapThresholdMinutes → 触发时间微压缩
+  //   - 清除 COMPACTABLE_TOOLS 中最旧的 N 条结果（保留 keepRecent 条）
+  //   - 时间触发时跳过 Cached MC（缓存已过期，无需 cache editing）
 function maybeTimeBasedMicrocompact(
   messages: Message[],
   querySource: QuerySource | undefined,

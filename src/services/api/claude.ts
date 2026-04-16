@@ -3254,7 +3254,17 @@ export function addCacheBreakpoints(
 
   return result
 }
-
+/**
+ * / 最终结构（伪代码）：
+system: [
+  { type: 'text', text: getAttributionHeader(fingerprint) },  // cc_version, cc_entrypoint
+  { type: 'text', text: getCLISyspromptPrefix(...) },         // "You are Claude Code..."
+  ...systemPromptSections.map(text => ({ type: 'text', text })),
+  // 最后一个块加 cache_control: { type: 'ephemeral' }
+  // → 启用 Anthropic prompt caching（1 小时 TTL）
+  // → 静态区块命中率高，动态区块每会话计算一次后缓存
+]
+ */
 export function buildSystemPromptBlocks(
   systemPrompt: SystemPrompt,
   enablePromptCaching: boolean,

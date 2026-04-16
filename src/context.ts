@@ -87,6 +87,8 @@ export const getGitStatus = memoize(async (): Promise<string | null> => {
         ? status.substring(0, MAX_STATUS_CHARS) +
           '\n... (truncated because it exceeds 2k characters. If you need more information, run "git status" using BashTool)'
         : status
+    // L86: status 超过 2000 字符时截断并追加提示
+    // L96: 返回格式化的多行字符串（branch, mainBranch, userName, status, log）
 
     logForDiagnosticsNoPII('info', 'git_status_completed', {
       duration_ms: Date.now() - startTime,
@@ -129,6 +131,7 @@ export const getSystemContext = memoize(
         : await getGitStatus()
 
     // Include system prompt injection if set (for cache breaking, ant-only)
+    // ! feature('BREAK_CACHE_COMMAND') → 注入缓存破坏符（ant-only）
     const injection = feature('BREAK_CACHE_COMMAND')
       ? getSystemPromptInjection()
       : null
@@ -164,6 +167,8 @@ export const getUserContext = memoize(
     // CLAUDE_CODE_DISABLE_CLAUDE_MDS: hard off, always.
     // --bare: skip auto-discovery (cwd walk), BUT honor explicit --add-dir.
     // --bare means "skip what I didn't ask for", not "ignore what I asked for".
+    // ! CLAUDE_CODE_DISABLE_CLAUDE_MDS → 完全禁用 CLAUDE.md 加载
+    // ! --bare 模式且无 --add-dir → 跳过自动发现
     const shouldDisableClaudeMd =
       isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS) ||
       (isBareMode() && getAdditionalDirectoriesForClaudeMd().length === 0)
@@ -175,6 +180,10 @@ export const getUserContext = memoize(
         // ! 过滤注入的记忆文件
         // ! 遍历 cwd 向上读所有 
       : getClaudeMds(filterInjectedMemoryFiles(await getMemoryFiles()))
+            // L172: getClaudeMds(filterInjectedMemoryFiles(await getMemoryFiles()))
+            //   getMemoryFiles()：扫描记忆目录，获取已注入的记忆文件路径集合
+            //   filterInjectedMemoryFiles()：从 CLAUDE.md 候选列表中排除记忆目录内的文件
+            //   getClaudeMds()：从 cwd 向上遍历至 home，收集所有 CLAUDE.md 并拼接
     // Cache for the auto-mode classifier (yoloClassifier.ts reads this
     // instead of importing claudemd.ts directly, which would create a
     // cycle through permissions/filesystem → permissions → yoloClassifier).
@@ -186,6 +195,8 @@ export const getUserContext = memoize(
       claudemd_disabled: Boolean(shouldDisableClaudeMd),
     })
 
+    // L181: setCachedClaudeMdContent(claudeMd) — 缓存供 yoloClassifier.ts 使用
+    // L191: 注入当前日期 "Today's date is YYYY/MM/DD."
     return {
       ...(claudeMd && { claudeMd }),
       currentDate: `Today's date is ${getLocalISODate()}.`,

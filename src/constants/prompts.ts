@@ -448,6 +448,7 @@ export async function getSystemPrompt(
   mcpClients?: MCPServerConnection[],
 ): Promise<string[]> {
   // ! L450 检查 CLAUDE_CODE_SIMPLE → 返回最小化 prompt
+  // ! // L451: CLAUDE_CODE_SIMPLE → 返回最小化 prompt（一行 CWD + Date）
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     return [
       `You are Claude Code, Anthropic's official CLI for Claude.\n\nCWD: ${getCwd()}\nDate: ${getSessionStartDate()}`,
@@ -462,10 +463,11 @@ export async function getSystemPrompt(
         │   └─ computeSimpleEnvInfo(model)          prompts.ts:651
    */
   const cwd = getCwd()
+  // ! 并行预取（标准路径）
   const [skillToolCommands, outputStyleConfig, envInfo] = await Promise.all([
-    getSkillToolCommands(cwd),
-    getOutputStyleConfig(),
-    computeSimpleEnvInfo(model, additionalWorkingDirectories),
+    getSkillToolCommands(cwd),  // ! 技能工具列表（供 session_guidance 使用）
+    getOutputStyleConfig(),     // ! 输出样式配置
+    computeSimpleEnvInfo(model, additionalWorkingDirectories),  // ! 环境信息
   ])
 
   const settings = getInitialSettings()
@@ -509,12 +511,13 @@ ${CYBER_RISK_INSTRUCTION}`,
             ├─ getScratchpadInstructions()           prompts.ts:797
             └─ getFunctionResultClearingSection()    prompts.ts:821
    */
+  // ! // L512: 动态区块（会话级缓存，/clear 或 /compact 后重新计算）
   const dynamicSections = [
     // ! systemPromptSection(name, fn)：标准缓存，在 /clear 或 /compact 之前保持稳定
     systemPromptSection('session_guidance', () =>
       getSessionSpecificGuidanceSection(enabledTools, skillToolCommands),
     ),
-    systemPromptSection('memory', () => loadMemoryPrompt()),
+    systemPromptSection('memory', () => loadMemoryPrompt()),  // ! 记忆注入到 System Prompt, ↑ 会话级缓存，/clear 或 /compact 后失效并重新计算
     systemPromptSection('ant_model_override', () =>
       getAntModelOverrideSection(),
     ),
@@ -580,6 +583,7 @@ ${CYBER_RISK_INSTRUCTION}`,
   const resolvedDynamicSections =
     await resolveSystemPromptSections(dynamicSections)
 
+  // ! 返回 [静态区块..., DYNAMIC_BOUNDARY, ...动态区块]
   return [
     /**
      * 构建静态区块（全局缓存，L560）：
@@ -592,6 +596,7 @@ ${CYBER_RISK_INSTRUCTION}`,
         │   └─ getOutputEfficiencySection()          prompts.ts:403
      */
     // --- Static content (cacheable) ---
+    // ! 静态区块（进程内全局缓存，不受 /clear 影响）：
     getSimpleIntroSection(outputStyleConfig),
     getSimpleSystemSection(),
     outputStyleConfig === null ||
@@ -606,6 +611,7 @@ ${CYBER_RISK_INSTRUCTION}`,
     // ! [SYSTEM_PROMPT_DYNAMIC_BOUNDARY]          prompts.ts:114
     ...(shouldUseGlobalCacheScope() ? [SYSTEM_PROMPT_DYNAMIC_BOUNDARY] : []),
     // --- Dynamic content (registry-managed) ---
+    // ! 动态区块（会话级缓存）：
     ...resolvedDynamicSections,
   ].filter(s => s !== null)
 }

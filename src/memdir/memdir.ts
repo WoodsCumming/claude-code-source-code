@@ -76,12 +76,13 @@ export function truncateEntrypointContent(raw: string): EntrypointTruncation {
     }
   }
 
+  // ! 先行截断
   let truncated = wasLineTruncated
     ? contentLines.slice(0, MAX_ENTRYPOINT_LINES).join('\n')
     : trimmed
 
   if (truncated.length > MAX_ENTRYPOINT_BYTES) {
-    const cutAt = truncated.lastIndexOf('\n', MAX_ENTRYPOINT_BYTES)
+    const cutAt = truncated.lastIndexOf('\n', MAX_ENTRYPOINT_BYTES) // ! 在换行处截断
     truncated = truncated.slice(0, cutAt > 0 ? cutAt : MAX_ENTRYPOINT_BYTES)
   }
 
@@ -198,6 +199,14 @@ function logMemoryDirCounts(
  * loadMemoryPrompt (system prompt, content injected via user context instead).
  */
 // ! 各类型的详细使用指导以 TYPES_SECTION_INDIVIDUAL（第 113 行）/ TYPES_SECTION_COMBINED（第 37 行）常量形式存储，在 buildMemoryLines() 中注入到 system prompt。
+  // 返回完整的记忆系统行为指导文本，包含：
+  // - TYPES_SECTION_INDIVIDUAL（4 种类型的定义）
+  // - WHAT_NOT_TO_SAVE_SECTION（不应保存的内容）
+  // - WHEN_TO_ACCESS_SECTION（何时读取记忆）
+  // - TRUSTING_RECALL_SECTION（记忆验证规则）
+  // - MEMORY_FRONTMATTER_EXAMPLE（frontmatter 格式示例）
+  // - 两步写入指南（Step 1: 写文件，Step 2: 更新 MEMORY.md 索引）
+  // - 当前 MEMORY.md 内容（截断后）
 export function buildMemoryLines(
   displayName: string,
   memoryDir: string,
@@ -262,6 +271,7 @@ export function buildMemoryLines(
     '',
   ]
 
+  // ! // 告知模型可通过 "Searching past context" 查找历史对话
   lines.push(...buildSearchingPastContextSection(memoryDir))
 
   return lines
@@ -271,6 +281,7 @@ export function buildMemoryLines(
  * Build the typed-memory prompt with MEMORY.md content included.
  * Used by agent memory (which has no getClaudeMds() equivalent).
  */
+// ! // 将 buildMemoryLines() 的指导 + MEMORY.md 内容组合成最终 prompt 块
 export function buildMemoryPrompt(params: {
   displayName: string
   memoryDir: string
@@ -375,6 +386,7 @@ function buildAssistantDailyLogPrompt(skipIndex = false): string {
  * Build the "Searching past context" section if the feature gate is enabled.
  */
 export function buildSearchingPastContextSection(autoMemDir: string): string[] {
+  // ! // feature('tengu_coral_fern') 启用时追加
   if (!getFeatureValue_CACHED_MAY_BE_STALE('tengu_coral_fern', false)) {
     return []
   }
@@ -422,6 +434,8 @@ export async function loadMemoryPrompt(): Promise<string | null> {
   // ! // 1. 检查 isAutoMemoryEnabled()
   const autoEnabled = isAutoMemoryEnabled()
 
+  // L423: skipIndex = feature('tengu_moth_copse')
+  //        → true 时跳过 MEMORY.md 索引注入（改用 attachment 预取）
   const skipIndex = getFeatureValue_CACHED_MAY_BE_STALE(
     'tengu_moth_copse',
     false,
@@ -432,6 +446,9 @@ export async function loadMemoryPrompt(): Promise<string | null> {
   // MEMORY.md that both sides read + write). Gating on `autoEnabled` here
   // means the !autoEnabled case falls through to the tengu_memdir_disabled
   // telemetry block below, matching the non-KAIROS path.
+
+  // L433: feature('KAIROS') && autoEnabled && getKairosActive()
+  //        → 助手模式：返回 buildAssistantDailyLogPrompt()（日志模式）
   if (feature('KAIROS') && autoEnabled && getKairosActive()) {
     logMemoryDirCounts(getAutoMemPath(), {
       memory_type:
@@ -448,6 +465,8 @@ export async function loadMemoryPrompt(): Promise<string | null> {
       ? [coworkExtraGuidelines]
       : undefined
 
+    // L449: feature('TEAMMEM') && isTeamMemoryEnabled()
+    //        → 团队模式：返回 buildCombinedMemoryPrompt()（合并个人+团队）
   if (feature('TEAMMEM')) {
     if (teamMemPaths!.isTeamMemoryEnabled()) {
       const autoDir = getAutoMemPath()
@@ -475,6 +494,9 @@ export async function loadMemoryPrompt(): Promise<string | null> {
     }
   }
 
+  // L476: autoEnabled（标准模式）
+  //        → ensureMemoryDirExists(autoDir)   ← 惰性创建目录
+  //        → buildMemoryLines('auto memory', autoDir, ...).join('\n')
   if (autoEnabled) {
     const autoDir = getAutoMemPath()
     // Harness guarantees the directory exists so the model can write without
