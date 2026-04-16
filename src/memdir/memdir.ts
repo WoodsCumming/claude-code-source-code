@@ -64,7 +64,7 @@ export function truncateEntrypointContent(raw: string): EntrypointTruncation {
   const wasLineTruncated = lineCount > MAX_ENTRYPOINT_LINES
   // Check original byte count — long lines are the failure mode the byte cap
   // targets, so post-line-truncation size would understate the warning.
-  const wasByteTruncated = byteCount > MAX_ENTRYPOINT_BYTES
+  const wasByteTruncated = byteCount > MAX_ENTRYPOINT_BYTES // ! 检查原始字节数，非截断后
 
   if (!wasLineTruncated && !wasByteTruncated) {
     return {
