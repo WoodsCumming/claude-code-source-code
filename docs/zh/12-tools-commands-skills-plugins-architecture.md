@@ -457,7 +457,7 @@ ${CLAUDE_SESSION_ID}  ← 替换为当前会话 ID
 **文件：`src/skills/loadSkillsDir.ts`**（第 344–400 行）
 
 ```typescript
-// src/skills/loadSkillsDir.ts:344
+// src/skills/loadSkillsDir.ts:366
 async getPromptForCommand(args, toolUseContext) {
   let finalContent = baseDir
     ? `Base directory for this skill: ${baseDir}\n\n${markdownContent}`
@@ -684,7 +684,7 @@ export function getBuiltinPluginSkillCommands(): Command[] {
   )
 }
 
-// src/plugins/builtinPlugins.ts:132
+// src/plugins/builtinPlugins.ts:135
 function skillDefinitionToCommand(definition: BundledSkillDefinition): Command {
   // 将 BundledSkillDefinition 转换为 Command（与 registerBundledSkill 相同逻辑）
 }
@@ -770,8 +770,8 @@ Plugin（插件）
 | `src/types/command.ts` | `CommandBase` 类型 | 186–214 |
 | `src/types/command.ts` | `Command` 联合类型 | 216–217 |
 | `src/commands.ts` | `COMMANDS()` 内置命令列表 | 258–346 |
-| `src/commands.ts` | `getCommands()` 公开入口 | 476–517 |
-| `src/commands.ts` | `findCommand()` 查找 | 688–703 |
+| `src/commands.ts` | `getCommands()` 公开入口 | 486–528 |
+| `src/commands.ts` | `findCommand()` 查找 | 706–716 |
 | `src/commands/commit.ts` | PromptCommand 示例 | 1–90 |
 | `src/commands/compact/index.ts` | LocalCommand 示例 | 1–15 |
 | `src/commands/help/index.ts` | LocalJSXCommand 示例 | 1–10 |
@@ -784,10 +784,10 @@ Plugin（插件）
 | `src/skills/bundledSkills.ts` | `BundledSkillDefinition` 类型 | 16–42 |
 | `src/skills/bundledSkills.ts` | `registerBundledSkill()` | 54–107 |
 | `src/skills/bundledSkills.ts` | `getBundledSkills()` | 107–113 |
-| `src/skills/loadSkillsDir.ts` | `parseSkillFrontmatterFields()` | 185–265 |
-| `src/skills/loadSkillsDir.ts` | `createSkillCommand()` | 270–401 |
-| `src/skills/loadSkillsDir.ts` | `loadSkillsFromSkillsDir()` | 407–480 |
-| `src/skills/loadSkillsDir.ts` | `getSkillDirCommands()` | 639–797 |
+| `src/skills/loadSkillsDir.ts` | `parseSkillFrontmatterFields()` | 204–226 |
+| `src/skills/loadSkillsDir.ts` | `createSkillCommand()` | 292–427 |
+| `src/skills/loadSkillsDir.ts` | `loadSkillsFromSkillsDir()` | 434–508 |
+| `src/skills/loadSkillsDir.ts` | `getSkillDirCommands()` | 687–1144 |
 | `src/skills/mcpSkillBuilders.ts` | `registerMCPSkillBuilders()` | 33–43 |
 
 ### Plugin 相关
@@ -802,8 +802,8 @@ Plugin（插件）
 | `src/utils/plugins/schemas.ts` | `PluginManifest` 类型导出 | 1653 |
 | `src/plugins/builtinPlugins.ts` | `registerBuiltinPlugin()` | 28–36 |
 | `src/plugins/builtinPlugins.ts` | `getBuiltinPluginSkillCommands()` | 108–131 |
-| `src/plugins/builtinPlugins.ts` | `skillDefinitionToCommand()` | 132–160 |
-| `src/utils/plugins/loadPluginCommands.ts` | `getPluginSkills()` | 840–944 |
+| `src/plugins/builtinPlugins.ts` | `skillDefinitionToCommand()` | 135–162 |
+| `src/utils/plugins/loadPluginCommands.ts` | `getPluginSkills()` | 846–951 |
 | `src/utils/plugins/loadPluginCommands.ts` | `createPluginCommand()` | 218–413 |
 | `src/utils/plugins/loadPluginCommands.ts` | `getPluginCommands()` | 414–679 |
 

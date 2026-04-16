@@ -75,7 +75,7 @@ type CommandBase = {
 Claude Code 启动时，在并行加载命令之前，先同步注册所有内置技能和插件：
 
 ```typescript
-// src/main.tsx:1947
+// src/main.tsx:1982
 // Register bundled skills/plugins before kicking getCommands() — they're
 // await points, so the parallel getCommands() memoized an empty list.
 initBuiltinPlugins();   // 注册内置插件技能
@@ -136,10 +136,10 @@ export function getBundledSkills(): Command[] {
 
 ### 3.1 `getCommands()` — 公开入口
 
-**文件：`src/commands.ts`**（第 476–517 行）
+**文件：`src/commands.ts`**（第 486–528 行）
 
 ```typescript
-// src/commands.ts:476
+// src/commands.ts:486
 export async function getCommands(cwd: string): Promise<Command[]> {
   const allCommands = await loadAllCommands(cwd)  // memoized
   const dynamicSkills = getDynamicSkills()         // 文件操作中发现的动态技能
@@ -155,10 +155,10 @@ export async function getCommands(cwd: string): Promise<Command[]> {
 
 ### 3.2 `loadAllCommands()` — 聚合加载（memoized）
 
-**文件：`src/commands.ts`**（第 449–469 行）
+**文件：`src/commands.ts`**（第 456–477 行）
 
 ```typescript
-// src/commands.ts:449
+// src/commands.ts:456
 const loadAllCommands = memoize(async (cwd: string): Promise<Command[]> => {
   const [
     { skillDirCommands, pluginSkills, bundledSkills, builtinPluginSkills },
@@ -211,10 +211,10 @@ async function getSkills(cwd: string): Promise<{
 
 ### 4.1 目录发现
 
-**文件：`src/skills/loadSkillsDir.ts`**（第 639–715 行）
+**文件：`src/skills/loadSkillsDir.ts`**（第 687–1144 行）
 
 ```typescript
-// src/skills/loadSkillsDir.ts:639
+// src/skills/loadSkillsDir.ts:687
 export const getSkillDirCommands = memoize(
   async (cwd: string): Promise<Command[]> => {
     const userSkillsDir    = join(getClaudeConfigHomeDir(), 'skills')   // ~/.claude/skills/
@@ -256,10 +256,10 @@ export const getSkillDirCommands = memoize(
 
 ### 4.2 `loadSkillsFromSkillsDir()` — 单目录加载
 
-**文件：`src/skills/loadSkillsDir.ts`**（第 407–480 行）
+**文件：`src/skills/loadSkillsDir.ts`**（第 434–508 行）
 
 ```typescript
-// src/skills/loadSkillsDir.ts:407
+// src/skills/loadSkillsDir.ts:434
 async function loadSkillsFromSkillsDir(
   basePath: string,
   source: SettingSource,
@@ -302,7 +302,7 @@ async function loadSkillsFromSkillsDir(
 通过 `realpath()` 解析符号链接，避免同一文件被多个来源重复加载：
 
 ```typescript
-// src/skills/loadSkillsDir.ts:729
+// src/skills/loadSkillsDir.ts:780
 const fileIds = await Promise.all(
   allSkillsWithPaths.map(({ filePath }) => getFileIdentity(filePath))
 )
@@ -326,7 +326,7 @@ for (let i = 0; i < allSkillsWithPaths.length; i++) {
 带有 `paths` frontmatter 的技能仅在匹配的文件被操作时才激活（不进入默认命令列表）：
 
 ```typescript
-// src/skills/loadSkillsDir.ts:777
+// src/skills/loadSkillsDir.ts:829
 for (const skill of deduplicatedSkills) {
   if (skill.type === 'prompt' && skill.paths?.length > 0
       && !activatedConditionalSkillNames.has(skill.name)) {
@@ -344,7 +344,7 @@ for (const skill of deduplicatedSkills) {
 
 ### 5.1 `parseSkillFrontmatterFields()` — 解析 frontmatter 字段
 
-**文件：`src/skills/loadSkillsDir.ts`**（第 185–265 行）
+**文件：`src/skills/loadSkillsDir.ts`**（第 204–226 行）
 
 支持的 frontmatter 字段：
 
@@ -366,7 +366,7 @@ for (const skill of deduplicatedSkills) {
 | `version` | string | 技能版本号 |
 
 ```typescript
-// src/skills/loadSkillsDir.ts:185
+// src/skills/loadSkillsDir.ts:204
 export function parseSkillFrontmatterFields(
   frontmatter: FrontmatterData,
   markdownContent: string,
@@ -389,10 +389,10 @@ export function parseSkillFrontmatterFields(
 
 ### 5.2 `createSkillCommand()` — 构造 Command 对象
 
-**文件：`src/skills/loadSkillsDir.ts`**（第 270–401 行）
+**文件：`src/skills/loadSkillsDir.ts`**（第 292–427 行）
 
 ```typescript
-// src/skills/loadSkillsDir.ts:270
+// src/skills/loadSkillsDir.ts:292
 export function createSkillCommand({ skillName, markdownContent, ... }): Command {
   return {
     type: 'prompt',
@@ -431,10 +431,10 @@ export function createSkillCommand({ skillName, markdownContent, ... }): Command
 
 ### 6.1 `getPluginSkills()` — 插件技能加载
 
-**文件：`src/utils/plugins/loadPluginCommands.ts`**（第 840–944 行）
+**文件：`src/utils/plugins/loadPluginCommands.ts`**（第 846–951 行）
 
 ```typescript
-// src/utils/plugins/loadPluginCommands.ts:840
+// src/utils/plugins/loadPluginCommands.ts:846
 export const getPluginSkills = memoize(async (): Promise<Command[]> => {
   const { enabled } = await loadAllPluginsCacheOnly()
 
@@ -499,7 +499,7 @@ export function registerBuiltinPlugin(definition: BuiltinPluginDefinition): void
 export function getBuiltinPluginSkillCommands(): Command[] {
   const { enabled } = getBuiltinPlugins()
   // 将启用的内置插件的 BundledSkillDefinition 转换为 Command
-  // src/plugins/builtinPlugins.ts:132
+  // src/plugins/builtinPlugins.ts:135
   // function skillDefinitionToCommand(definition): Command { ... }
 }
 ```
@@ -529,10 +529,10 @@ MCP 技能通过 `context.getAppState().mcp.commands` 获取，`loadedFrom: 'mcp
 
 ## 八、命令查找
 
-**文件：`src/commands.ts`**（第 688–727 行）
+**文件：`src/commands.ts`**（第 706–716 行）
 
 ```typescript
-// src/commands.ts:688
+// src/commands.ts:706
 export function findCommand(
   commandName: string,
   commands: Command[]
@@ -545,7 +545,7 @@ export function findCommand(
   )
 }
 
-// src/commands.ts:704
+// src/commands.ts:722
 export function getCommand(commandName: string, commands: Command[]): Command {
   const command = findCommand(commandName, commands)
   if (!command) throw new ReferenceError(...)
@@ -660,10 +660,10 @@ async function executeForkedSkill(command, commandName, args, context, ...) {
 
 ## 十、缓存失效
 
-**文件：`src/commands.ts`**（第 523–530 行）
+**文件：`src/commands.ts`**（第 541–550 行）
 
 ```typescript
-// src/commands.ts:523
+// src/commands.ts:541
 export function clearCommandMemoizationCaches(): void {
   loadAllCommands.cache?.clear?.()
   getSkillToolCommands.cache?.clear?.()
@@ -722,22 +722,22 @@ Claude Code 启动
 | `src/types/command.ts` | `PromptCommand` 类型定义 | 25–57 |
 | `src/types/command.ts` | `CommandBase` 类型定义 | 175–203 |
 | `src/main.tsx` | 启动初始化（`initBundledSkills` + `getCommands`） | 1943–1956 |
-| `src/commands.ts` | `getCommands()` 公开入口 | 476–517 |
-| `src/commands.ts` | `loadAllCommands()` 聚合加载 | 449–469 |
+| `src/commands.ts` | `getCommands()` 公开入口 | 486–528 |
+| `src/commands.ts` | `loadAllCommands()` 聚合加载 | 456–477 |
 | `src/commands.ts` | `getSkills()` 技能聚合 | 353–398 |
-| `src/commands.ts` | `findCommand()` 命令查找 | 688–703 |
-| `src/commands.ts` | `clearCommandMemoizationCaches()` | 523–530 |
+| `src/commands.ts` | `findCommand()` 命令查找 | 706–716 |
+| `src/commands.ts` | `clearCommandMemoizationCaches()` | 541–550 |
 | `src/skills/bundled/index.ts` | `initBundledSkills()` | 24–79 |
 | `src/skills/bundledSkills.ts` | `registerBundledSkill()` | 54–107 |
 | `src/skills/bundledSkills.ts` | `getBundledSkills()` | 107–113 |
-| `src/skills/loadSkillsDir.ts` | `getSkillDirCommands()` 目录扫描 | 639–797 |
-| `src/skills/loadSkillsDir.ts` | `loadSkillsFromSkillsDir()` 单目录加载 | 407–480 |
-| `src/skills/loadSkillsDir.ts` | `parseSkillFrontmatterFields()` | 185–265 |
-| `src/skills/loadSkillsDir.ts` | `createSkillCommand()` | 270–401 |
+| `src/skills/loadSkillsDir.ts` | `getSkillDirCommands()` 目录扫描 | 687–1144 |
+| `src/skills/loadSkillsDir.ts` | `loadSkillsFromSkillsDir()` 单目录加载 | 434–508 |
+| `src/skills/loadSkillsDir.ts` | `parseSkillFrontmatterFields()` | 204–226 |
+| `src/skills/loadSkillsDir.ts` | `createSkillCommand()` | 292–427 |
 | `src/skills/mcpSkillBuilders.ts` | `registerMCPSkillBuilders()` | 33–43 |
 | `src/plugins/builtinPlugins.ts` | `registerBuiltinPlugin()` | 28–36 |
 | `src/plugins/builtinPlugins.ts` | `getBuiltinPluginSkillCommands()` | 108–131 |
-| `src/utils/plugins/loadPluginCommands.ts` | `getPluginSkills()` | 840–944 |
+| `src/utils/plugins/loadPluginCommands.ts` | `getPluginSkills()` | 846–951 |
 | `src/utils/plugins/loadPluginCommands.ts` | `createPluginCommand()` | 218–413 |
 | `src/utils/processUserInput/processSlashCommand.tsx` | `processPromptSlashCommand()` | 817–826 |
 | `src/utils/processUserInput/processSlashCommand.tsx` | `getMessagesForPromptSlashCommand()` | 827–950+ |
