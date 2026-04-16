@@ -40,7 +40,7 @@ export const MAX_ENTRYPOINT_BYTES = 25_000  // ! 字节上限
 const AUTO_MEM_DISPLAY_NAME = 'auto memory'
 
 export type EntrypointTruncation = {
-  content: string
+  content: string // ! 截断后的内容（含警告）
   lineCount: number
   byteCount: number
   wasLineTruncated: boolean
