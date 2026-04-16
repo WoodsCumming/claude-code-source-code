@@ -417,6 +417,7 @@ export function buildSearchingPastContextSection(autoMemDir: string): string[] {
  * Returns null when auto memory is disabled.
  */
 export async function loadMemoryPrompt(): Promise<string | null> {
+  // ! // 1. 检查 isAutoMemoryEnabled()
   const autoEnabled = isAutoMemoryEnabled()
 
   const skipIndex = getFeatureValue_CACHED_MAY_BE_STALE(
