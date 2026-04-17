@@ -511,6 +511,19 @@ function createCompactionResultFromSessionMemory(
  * 2. Resumed session: lastSummarizedMessageId is not set but session memory has content,
  *    keep all messages but use session memory as the summary
  */
+  // 条件：tengu_session_memory + tengu_sm_compact 均启用
+  // 条件：会话记忆文件存在且非空模板
+  // 条件：无 custom instructions（会话记忆不支持自定义摘要指令）
+  
+  // 从 lastSummarizedMessageId 开始，向后计算保留消息范围
+  // 限制：minTokens=10,000、minTextBlockMessages=5、maxTokens=40,000
+  // 直接返回 CompactionResult，不调用 LLM
+  /**
+   * 优势：
+      无需调用 LLM，节省 API 费用
+      保留原始消息（无摘要失真）
+      Token 节省约 70-80%
+   */
 export async function trySessionMemoryCompaction(
   messages: Message[],
   agentId?: AgentId,

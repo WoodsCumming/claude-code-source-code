@@ -17,9 +17,9 @@ const proactiveModule =
 // 0.01% on 4.5). Putting this FIRST and making it explicit about rejection
 // consequences prevents the wasted turn.
 // ! 压缩提示词
-// 设计原因（L12）：Sonnet 4.6+ adaptive thinking 模型有时会在摘要时尝试调用工具
-// 若工具调用被拒绝，maxTurns: 1 下无文本输出 → 回退流式路径（约 2.79% 概率）
-// 将此段放在最前面并明确说明后果，可将失败率从 2.79% 降至 0.01%
+// ! 设计原因（L12）：Sonnet 4.6+ adaptive thinking 模型有时会在摘要时尝试调用工具
+// ! 若工具调用被拒绝，maxTurns: 1 下无文本输出 → 回退流式路径（约 2.79% 概率）
+// ! 将此段放在最前面并明确说明后果，可将失败率从 2.79% 降至 0.01%
 const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
 
 - Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
@@ -70,10 +70,10 @@ const DETAILED_ANALYSIS_INSTRUCTION_PARTIAL = `Before providing your final summa
 // 3. Files and Code Sections     — 检查/修改/创建的文件，含完整代码片段
 // 4. Errors and Fixes            — 错误及修复，含用户反馈
 // 5. Problem Solving             — 已解决的问题和进行中的调试
-// 6. All User Messages           — 所有非工具结果的用户消息（完整保留，追踪意图变化）
+// ! 6. All User Messages           — 所有非工具结果的用户消息（完整保留，追踪意图变化）
 // 7. Pending Tasks               — 明确被要求的待办任务
 // 8. Current Work                — 压缩前正在进行的工作（含文件名和代码片段）
-// 9. Optional Next Step          — 下一步行动（含原文引用，防止任务漂移）
+// ! 9. Optional Next Step          — 下一步行动（含原文引用，防止任务漂移）
 const BASE_COMPACT_PROMPT = `Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
 This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
 

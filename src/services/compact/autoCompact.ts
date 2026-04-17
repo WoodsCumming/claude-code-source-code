@@ -30,13 +30,15 @@ import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000  // ! // 为摘要输出预留的最大 token 数
 
 // Returns the context window size minus the max output tokens for the model
+// ! // 有效上下文窗口 = 模型窗口 - 为摘要输出预留的 token 数
 export function getEffectiveContextWindowSize(model: string): number {
   const reservedTokensForSummary = Math.min(
     getMaxOutputTokensForModel(model),
-    MAX_OUTPUT_TOKENS_FOR_SUMMARY,
+    MAX_OUTPUT_TOKENS_FOR_SUMMARY,  // ! // 20,000 tokens（p99.99 摘要输出为 17,387 tokens）
   )
   let contextWindow = getContextWindowForModel(model, getSdkBetas())
 
+  // ! // 支持环境变量覆盖：CLAUDE_CODE_AUTO_COMPACT_WINDOW
   const autoCompactWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
   if (autoCompactWindow) {
     const parsed = parseInt(autoCompactWindow, 10)
@@ -69,11 +71,18 @@ export const MANUAL_COMPACT_BUFFER_TOKENS = 3_000 // ! // 手动 /compact 时的
 // in a single session, wasting ~250K API calls/day globally.
 const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3  // ! // 熔断阈值
 
+// ! // 自动压缩触发阈值 = 有效窗口 - 13,000 tokens 安全边距
+// 实际阈值示例（Claude Sonnet，200K 窗口）：
+
+// 有效窗口：200,000 - 20,000 = 180,000 tokens
+// 自动压缩触发：180,000 - 13,000 = 167,000 tokens（约 83.5%）
+// 警告 UI 显示：167,000 - 20,000 = 147,000 tokens（约 73.5%）
+// 阻塞限制：180,000 - 3,000 = 177,000 tokens（约 88.5%）
 export function getAutoCompactThreshold(model: string): number {
   const effectiveContextWindow = getEffectiveContextWindowSize(model)
 
   const autocompactThreshold =
-    effectiveContextWindow - AUTOCOMPACT_BUFFER_TOKENS
+    effectiveContextWindow - AUTOCOMPACT_BUFFER_TOKENS  // ! 13,000
 
   // Override for easier testing of autocompact
   const envPercent = process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
@@ -171,6 +180,7 @@ export async function shouldAutoCompact(
 ): Promise<boolean> {
   // Recursion guards. session_memory and compact are forked agents that
   // would deadlock.
+  // ! // 1. 递归防护：session_memory 和 compact 是 forked agent，会死锁
   if (querySource === 'session_memory' || querySource === 'compact') {
     return false
     // ! 防止递归死锁）
@@ -180,12 +190,14 @@ export async function shouldAutoCompact(
   // which destroys the MAIN thread's committed log (module-level state
   // shared across forks). Inside feature() so the string DCEs from
   // external builds (it's in excluded-strings.txt).
+  // ! // 2. Context Collapse 模式防护（ant-only）：90% commit / 95% blocking 流程接管
   if (feature('CONTEXT_COLLAPSE')) {
     if (querySource === 'marble_origami') {
       return false
     }
   }
 
+  // ! // 4. 用户配置和环境变量检查
   if (!isAutoCompactEnabled()) {
     return false
   }
@@ -196,6 +208,7 @@ export async function shouldAutoCompact(
   // Note: returning false here also means autoCompactIfNeeded never reaches
   // trySessionMemoryCompaction in the query loop — the /compact call site
   // still tries session memory first. Revisit if reactive-only graduates.
+  // ! // 3. Reactive Compact 模式：抑制主动压缩，等 API 返回 prompt_too_long
   if (feature('REACTIVE_COMPACT')) {
     // ! 抑制主动压缩，依赖 API 返回 prompt_too_long
     if (getFeatureValue_CACHED_MAY_BE_STALE('tengu_cobalt_raccoon', false)) {
@@ -227,6 +240,7 @@ export async function shouldAutoCompact(
     }
   }
 
+  // ! // 5. Token 计数比对
   const tokenCount = tokenCountWithEstimation(messages) - snipTokensFreed
   const threshold = getAutoCompactThreshold(model)
   const effectiveWindow = getEffectiveContextWindowSize(model)
@@ -262,6 +276,7 @@ export async function autoCompactIfNeeded(
   // Circuit breaker: stop retrying after N consecutive failures.
   // Without this, sessions where context is irrecoverably over the limit
   // hammer the API with doomed compaction attempts on every turn.
+  // ! 熔断: 停止重试，不再浪费 API 调用
   if (
     tracking?.consecutiveFailures !== undefined &&
     tracking.consecutiveFailures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES

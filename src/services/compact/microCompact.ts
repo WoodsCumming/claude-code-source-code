@@ -279,6 +279,8 @@ export async function microcompactMessages(
   // tool_results in the global cachedMCState, which would cause the main
   // thread to try deleting tools that don't exist in its own conversation.
   if (feature('CACHED_MICROCOMPACT')) { // ! Cached MC 路径（ant-only）
+    // ! 通过 API 的 cache_edits 指令删除旧 tool_result，不修改本地消息内容
+    // ! 保留 prompt cache prefix，避免 cache miss
     const mod = await getCachedMCModule()
     const model = toolUseContext?.options.mainLoopModel ?? getMainLoopModel()
     if (
@@ -428,6 +430,10 @@ async function cachedMicrocompactPath(
  * Extracted so other pre-request paths (e.g. snip force-apply) can consult
  * the same predicate without coupling to the tool-result clearing action.
  */
+// ! 时间触发微压缩
+// ! 逻辑：距上次 assistant 消息超过阈值分钟时，直接清除 COMPACTABLE_TOOLS 中最旧的工具结果（保留最近 N 条），替换为占位符 [Old tool result content cleared]。
+// ! 设计原因：缓存已冷（超时），重写 prompt 时无论如何都会 cache miss，此时直接清除旧内容比 cache editing 更合适。
+// ! 关键区别：Cached MC 不修改本地消息，通过 API 层的 cache_edits 指令实现，cache prefix 保持不变，避免 cache miss。
 export function evaluateTimeBasedTrigger(
   messages: Message[],
   querySource: QuerySource | undefined,
@@ -449,7 +455,7 @@ export function evaluateTimeBasedTrigger(
   const gapMinutes =
     (Date.now() - new Date(lastAssistant.timestamp).getTime()) / 60_000
   if (!Number.isFinite(gapMinutes) || gapMinutes < config.gapThresholdMinutes) {
-    return null
+    return null // ! // 未达到时间阈值
   }
   return { gapMinutes, config }
 }
