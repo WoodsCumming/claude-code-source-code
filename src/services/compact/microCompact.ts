@@ -39,6 +39,7 @@ export const TIME_BASED_MC_CLEARED_MESSAGE = '[Old tool result content cleared]'
 const IMAGE_MAX_TOKEN_SIZE = 2000 // ! // 图片 token 超此值时也被清除
 
 // Only compact these tools
+// ! 设计原则：只清除可重现的工具结果。Agent 结果、技能输出等不可轻易重现的内容不被清除。
 const COMPACTABLE_TOOLS = new Set<string>([
   FILE_READ_TOOL_NAME,  // ! Read  — 文件内容可重新读取
   ...SHELL_TOOL_NAMES,  // ! Bash  — 命令输出可重新执行
@@ -253,6 +254,11 @@ function isMainThreadSource(querySource: QuerySource | undefined): boolean {
   return !querySource || querySource.startsWith('repl_main_thread')
 }
 
+// !
+/**
+ * 替换策略：将超过时间窗口的工具输出内容替换为 [Old tool result content cleared]。这不是简单的截断——原始内容仍保留在 JSONL transcript 中，只是不再发送给 API。
+MicroCompact 还有一个时间衰减配置（timeBasedMCConfig.ts）：越旧的工具输出越容易被清除，最近的优先保留。
+ */
 export async function microcompactMessages(
   messages: Message[],
   toolUseContext?: ToolUseContext,
@@ -269,6 +275,8 @@ export async function microcompactMessages(
   // Cached MC (cache-editing) is skipped when this fires: editing assumes a
   // warm cache, and we just established it's cold.
   // ! 时间触发路径（优先）
+  // ! const IMAGE_MAX_TOKEN_SIZE = 2000
+  // ! 图片 block 如果超过 2000 token 估算值，也会被 MicroCompact 清除。PDF document block 同理。
   const timeBasedResult = maybeTimeBasedMicrocompact(messages, querySource)
   if (timeBasedResult) {
     return timeBasedResult
@@ -313,6 +321,8 @@ export async function microcompactMessages(
  * - Takes precedence over regular microcompact (no disk persistence)
  * - Tracks tool results and queues cache edits for the API layer
  */
+// ! Cached 微压缩
+// ! 关键区别：Cached MC 不修改本地消息，通过 API 层的 cache_edits 指令实现删除，Prompt Cache prefix 保持不变，避免 cache miss。这是 apiMicrocompact.ts 中定义的 API 原生上下文管理机制的客户端实现。
 async function cachedMicrocompactPath(
   messages: Message[],
   querySource: QuerySource | undefined,
@@ -321,8 +331,11 @@ async function cachedMicrocompactPath(
   const state = ensureCachedMCState()
   const config = mod.getCachedMCConfig()
 
+  // ! // 第一步：收集可压缩工具的 ID
   const compactableToolIds = new Set(collectCompactableToolIds(messages))
   // Second pass: register tool results grouped by user message
+
+  // ! // 第二步：按 user 消息分组注册工具结果
   for (const message of messages) {
     if (message.type === 'user' && Array.isArray(message.message.content)) {
       const groupIds: string[] = []
@@ -340,13 +353,15 @@ async function cachedMicrocompactPath(
     }
   }
 
+  // ! // 第三步：决定要删除哪些工具结果
   const toolsToDelete = mod.getToolResultsToDelete(state)
 
   if (toolsToDelete.length > 0) {
     // Create and queue the cache_edits block for the API layer
+    // ! // 创建 cache_edits 块，在 API 层删除（不修改本地消息！）
     const cacheEdits = mod.createCacheEditsBlock(state, toolsToDelete)
     if (cacheEdits) {
-      pendingCacheEdits = cacheEdits
+      pendingCacheEdits = cacheEdits  // ! // 存入待发送队列
     }
 
     logForDebugging(
@@ -393,8 +408,9 @@ async function cachedMicrocompactPath(
           )?.cache_deleted_input_tokens ?? 0)
         : 0
 
+    // ! // ...返回原始消息，不做任何修改
     return {
-      messages,
+      messages, // ! // 本地消息不变！
       compactionInfo: {
         pendingCacheEdits: {
           trigger: 'auto',
@@ -434,6 +450,15 @@ async function cachedMicrocompactPath(
 // ! 逻辑：距上次 assistant 消息超过阈值分钟时，直接清除 COMPACTABLE_TOOLS 中最旧的工具结果（保留最近 N 条），替换为占位符 [Old tool result content cleared]。
 // ! 设计原因：缓存已冷（超时），重写 prompt 时无论如何都会 cache miss，此时直接清除旧内容比 cache editing 更合适。
 // ! 关键区别：Cached MC 不修改本地消息，通过 API 层的 cache_edits 指令实现，cache prefix 保持不变，避免 cache miss。
+/**
+ * 触发逻辑（第 468-552 行）：
+
+找到最后一条 assistant 消息的时间戳
+gapMinutes = (Date.now() - lastAssistant.timestamp) / 60_000
+若 gapMinutes >= config.gapThresholdMinutes，触发时间微压缩
+清除 COMPACTABLE_TOOLS 中最旧的工具结果（保留最近 keepRecent 条）
+替换内容为 '[Old tool result content cleared]'（第 37 行常量）
+ */
 export function evaluateTimeBasedTrigger(
   messages: Message[],
   querySource: QuerySource | undefined,
@@ -447,11 +472,13 @@ export function evaluateTimeBasedTrigger(
     // ! 要求显式 main-thread querySource（undefined 不触发，防止分析调用误触发）
     return null
   }
+  // ! // 找最后一条 assistant 消息
   const lastAssistant = messages.findLast(m => m.type === 'assistant')
   // ! findLast(m => m.type === 'assistant') — 找最后一条 assistant 消息
   if (!lastAssistant) {
     return null
   }
+  // ! // 计算空闲时长
   const gapMinutes =
     (Date.now() - new Date(lastAssistant.timestamp).getTime()) / 60_000
   if (!Number.isFinite(gapMinutes) || gapMinutes < config.gapThresholdMinutes) {

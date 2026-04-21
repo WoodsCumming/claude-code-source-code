@@ -4567,6 +4567,7 @@ export function createCommandInputMessage(
   }
 }
 
+// ! 每次压缩后，系统在消息流中插入一条 SystemCompactBoundaryMessage：
 export function createCompactBoundaryMessage(
   trigger: 'manual' | 'auto',
   preTokens: number,
@@ -4594,12 +4595,19 @@ export function createCompactBoundaryMessage(
   }
 }
 
+// ! 
+/**
+ * 与 compact_boundary 的区别：
+保留原始消息：Microcompact 仅清除工具输出内容，不删除消息本身
+可追溯性：compactedToolIds 记录了哪些工具结果被清除
+轻量级：不生成摘要，不调用 API
+ */
 export function createMicrocompactBoundaryMessage(
-  trigger: 'auto',
-  preTokens: number,
-  tokensSaved: number,
-  compactedToolIds: string[],
-  clearedAttachmentUUIDs: string[],
+  trigger: 'auto',  // ! // Microcompact 只有自动触发
+  preTokens: number,  // ! 压缩前 token 数
+  tokensSaved: number,  // ! 节省的 token 数
+  compactedToolIds: string[], // ! 被压缩的工具 ID 列表
+  clearedAttachmentUUIDs: string[], // ! // 被清除的附件 UUID
 ): SystemMicrocompactBoundaryMessage {
   logForDebugging(
     `[microcompact] saved ~${formatTokens(tokensSaved)} tokens (cleared ${compactedToolIds.length} tool results)`,

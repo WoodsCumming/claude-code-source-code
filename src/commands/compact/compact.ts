@@ -50,10 +50,30 @@ export const call: LocalCommandCall = async (args, context) => {
   }
 
   const customInstructions = args.trim()
+  /**
+   * ! 总结：三层压缩的选择逻辑
+      每次请求前：
+        microcompactMessages()
+          ├── 时间触发（缓存已冷）→ 直接清除旧工具结果，替换为占位符
+          └── Cached MC（缓存温热）→ 通过 API cache_edits 删除，不修改本地消息
+
+      Token 超过阈值时：
+        autoCompactIfNeeded()
+          ├── trySessionMemoryCompaction()
+          │     ├── 有记忆文件 + 知道边界 → 用记忆替换历史，保留最近消息（不调用 LLM）
+          │     └── 条件不满足 → null
+          └── compactConversation()
+                ├── runForkedAgent（复用 Prompt Cache 前缀）→ 生成 9 段结构化摘要
+                ├── prompt_too_long → truncateHeadForPTLRetry() 截断重试（最多 3 次）
+                └── 压缩后重建：文件(5个/50K) + 技能(25K) + 工具列表 + CLAUDE.md
+    * ! 核心设计哲学：能不调用 LLM 就不调用，必须调用时复用缓存，调用后精确重建上下文。
+   */
 
   try {
     // Try session memory compaction first if no custom instructions
     // (session memory compaction doesn't support custom instructions)
+    // ! // 优先：SM 压缩
+    // ! 不需要调用摘要模型，直接使用已经提取好的 Session Memory 作为对话摘要。
     if (!customInstructions) {
       const sessionMemoryResult = await trySessionMemoryCompaction(
         messages,
@@ -84,6 +104,17 @@ export const call: LocalCommandCall = async (args, context) => {
 
     // Reactive-only mode: route /compact through the reactive path.
     // Checked after session-memory (that path is cheap and orthogonal).
+    // ! 
+    /**
+     * 
+PTL 紧急降级：Prompt Too Long
+当压缩后仍然超出 token 限制（PROMPT_TOO_LONG 错误），系统会进入紧急降级路径：
+Reactive Compact：reactiveCompactOnPromptTooLong() 尝试更激进的压缩
+截断重试：如果 reactive 也失败，truncateHeadForPTLRetry() 直接截断最早的消息
+放弃并报错
+Reactive Compact 目前在反编译版本中是 stub（isReactiveOnlyMode() → false），表明这是 Anthropic 内部的实验性功能。
+     */
+    // ! // 次选：Reactive 压缩
     if (reactiveCompact?.isReactiveOnlyMode()) {
       return await compactViaReactive(
         messages,
@@ -95,9 +126,13 @@ export const call: LocalCommandCall = async (args, context) => {
 
     // Fall back to traditional compaction
     // Run microcompact first to reduce tokens before summarization
+    // ! // 兜底：传统 API 摘要
+    // ! 当 SM 压缩不可用时，系统回退到传统方式：调用 AI 模型生成对话摘要。
     const microcompactResult = await microcompactMessages(messages, context)
     const messagesForCompact = microcompactResult.messages
 
+    // ! // → 调用 AI 模型生成摘要
+    // ! LLM摘要主入口
     const result = await compactConversation(
       messagesForCompact,
       context,

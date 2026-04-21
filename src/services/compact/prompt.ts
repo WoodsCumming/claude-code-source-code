@@ -20,6 +20,7 @@ const proactiveModule =
 // ! 设计原因（L12）：Sonnet 4.6+ adaptive thinking 模型有时会在摘要时尝试调用工具
 // ! 若工具调用被拒绝，maxTurns: 1 下无文本输出 → 回退流式路径（约 2.79% 概率）
 // ! 将此段放在最前面并明确说明后果，可将失败率从 2.79% 降至 0.01%
+// ! 防工具调用前缀
 const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
 
 - Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
@@ -33,6 +34,7 @@ const NO_TOOLS_PREAMBLE = `CRITICAL: Respond with TEXT ONLY. Do NOT call any too
 // recent messages". The <analysis> block is a drafting scratchpad that
 // formatCompactSummary() strips before the summary reaches context.
 // ! // 要求在摘要前先进行分析（scratchpad），formatCompactSummary() 会去除此块
+// ! 分析-摘要双阶段结构
 const DETAILED_ANALYSIS_INSTRUCTION_BASE = `Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
 
 1. Chronologically analyze each message and section of the conversation. For each section thoroughly identify:
@@ -358,19 +360,21 @@ export function formatCompactSummary(summary: string): string {
 }
 
 // ! 将摘要包装为用户消息格式（压缩后的第一条消息）
+// ! 摘要被包装成一条 user 消息（isCompactSummary: true）注入上下文，而非 system prompt。这样模型能以"接收方"的视角读取摘要，与正常对话流保持一致。
 export function getCompactUserSummaryMessage(
   summary: string,
   suppressFollowUpQuestions?: boolean,
   transcriptPath?: string,
   recentMessagesPreserved?: boolean,
 ): string {
-  const formattedSummary = formatCompactSummary(summary)
+  const formattedSummary = formatCompactSummary(summary) // ! // 去除 <analysis> 块
 
   let baseSummary = `This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
 
 ${formattedSummary}`
 
   if (transcriptPath) {
+    // ! // 告知模型可以读取完整记录（如需要精确代码片段等）
     baseSummary += `\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: ${transcriptPath}`
   }
 
@@ -379,6 +383,7 @@ ${formattedSummary}`
   }
 
   if (suppressFollowUpQuestions) {
+    // ! // 自动压缩时：直接继续，不询问用户
     let continuation = `${baseSummary}
 Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.`
 

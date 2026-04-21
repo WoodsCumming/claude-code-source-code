@@ -420,6 +420,8 @@ messagesForQuery（处理后的消息）→ 发往 API
     let snipTokensFreed = 0
     if (feature('HISTORY_SNIP')) {
       queryCheckpoint('query_snip_start')
+      // ! Snip Compact 是另一种实验性压缩策略，在反编译版本中为空壳实现。从 stub 的类型签名推断：
+      // ! 它似乎是一种更细粒度的消息级裁剪（snip = 剪切），可能是对单条消息的进一步压缩，而非整个对话。shouldNudgeForSnips() 和 SNIP_NUDGE_TEXT 暗示它可能会提示用户触发。
       const snipResult = snipModule!.snipCompactIfNeeded(messagesForQuery)
       messagesForQuery = snipResult.messages
       snipTokensFreed = snipResult.tokensFreed
@@ -546,6 +548,7 @@ messagesForQuery（处理后的消息）→ 发往 API
         consecutiveFailures: 0,
       }
 
+      // ! 重建压缩后的消息
       const postCompactMessages = buildPostCompactMessages(compactionResult)
 
       for (const message of postCompactMessages) {
@@ -1269,6 +1272,7 @@ messagesForQuery（处理后的消息）→ 发往 API
             )
           }
 
+          // ! 重建压缩后的消息
           const postCompactMessages = buildPostCompactMessages(compacted)
           for (const msg of postCompactMessages) {
             yield msg

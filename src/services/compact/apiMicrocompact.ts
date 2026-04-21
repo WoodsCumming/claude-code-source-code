@@ -81,9 +81,10 @@ export function getAPIContextManagement(options?: {
   // When clearAllThinking is set (>1h idle = cache miss), keep only the last
   // thinking turn — the API schema requires value >= 1, and omitting the edit
   // falls back to the model-policy default (often "all"), which wouldn't clear.
+  // ! // 策略1：清除旧 thinking 块（保留最近 N 个 thinking turns）
   if (hasThinking && !isRedactThinkingActive) {
     strategies.push({
-      type: 'clear_thinking_20251015',
+      type: 'clear_thinking_20251015',  // ! 清除旧的 thinking 块（extended thinking 模式下）
       keep: clearAllThinking ? { type: 'thinking_turns', value: 1 } : 'all',
     })
   }
@@ -103,6 +104,7 @@ export function getAPIContextManagement(options?: {
     return strategies.length > 0 ? { edits: strategies } : undefined
   }
 
+  // ! // 策略2：清除旧 tool_result 内容（ant-only，需环境变量启用）
   if (useClearToolResults) {
     const triggerThreshold = process.env.API_MAX_INPUT_TOKENS
       ? parseInt(process.env.API_MAX_INPUT_TOKENS)
@@ -112,16 +114,16 @@ export function getAPIContextManagement(options?: {
       : DEFAULT_TARGET_INPUT_TOKENS
 
     const strategy: ContextEditStrategy = {
-      type: 'clear_tool_uses_20250919',
+      type: 'clear_tool_uses_20250919', // ! 当 input_tokens 超过阈值时，清除旧工具结果
       trigger: {
         type: 'input_tokens',
-        value: triggerThreshold,
+        value: triggerThreshold,  // ! // 触发阈值
       },
       clear_at_least: {
         type: 'input_tokens',
         value: triggerThreshold - keepTarget,
       },
-      clear_tool_inputs: TOOLS_CLEARABLE_RESULTS,
+      clear_tool_inputs: TOOLS_CLEARABLE_RESULTS, // ! // 指定哪些工具的结果可被清除
     }
 
     strategies.push(strategy)
