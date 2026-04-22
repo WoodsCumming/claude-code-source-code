@@ -834,6 +834,9 @@ export async function partialCompactConversation(
 ): Promise<CompactionResult> {
   // ! direction = 'from'：压缩 pivotIndex 之后的消息，保留之前的（保留头部）
   // ! direction = 'up_to'：压缩 pivotIndex 之前的消息，保留之后的（保留尾部）
+  /**
+   * !  from 方向保留 prompt cache（前缀不变），up_to 方向则破坏 cache（摘要插在保留内容之前）。两种方向的 PTL（prompt-too-long）重试策略相同：从最老的 API 轮次开始删除，确保至少保留一组消息供摘要。
+   */
   try {
     const messagesToSummarize =
       direction === 'up_to'
