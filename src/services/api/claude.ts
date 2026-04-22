@@ -3460,9 +3460,13 @@ export function getMaxOutputTokensForModel(model: string): number {
   // max_output_tokens_escalate). Math.min keeps models with lower native
   // defaults (e.g. claude-3-opus at 4k) at their native value. Applied
   // before the env-var override so CLAUDE_CODE_MAX_OUTPUT_TOKENS still wins.
+  // ! 输出 Token 的 Slot 优化
   const defaultTokens = isMaxTokensCapEnabled()
-    ? Math.min(maxOutputTokens.default, CAPPED_DEFAULT_MAX_TOKENS)
-    : maxOutputTokens.default
+    ? Math.min(maxOutputTokens.default, CAPPED_DEFAULT_MAX_TOKENS)  // ! // 默认降到 8K
+    : maxOutputTokens.default // ! // 原始默认 32K/64K
+  /**
+   * ! 为什么？因为 API 的 slot 机制按 max_tokens 预留推理容量。BQ p99 输出仅 4,911 tokens，32K 默认值浪费了 8-16 倍的 slot 容量。降到 8K 后，不到 1% 的请求被截断——这些请求会自动获得一次 64K 的 clean retry。这个优化对 token 预算的影响是间接的：更多的 slot 容量意味着更少的排队延迟，间接减少了超时和重试。
+   */
 
   const result = validateBoundedIntEnvVar(
     'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
