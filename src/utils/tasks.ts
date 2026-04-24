@@ -551,6 +551,22 @@ export type ClaimTaskOptions = {
  * if the agent owns any other open tasks before claiming.
  */
 // ! claimTask() 实现了原子性的任务认领——多个 agent 竞争同一 task 时，只有一个能成功：
+/**
+ * Teammate A 调用 TaskList → 发现 task #3 是 pending
+Teammate B 同时发现 task #3 是 pending
+  ↓
+两者同时尝试 TaskUpdate(task #3, {status: "in_progress"})
+  ↓
+文件锁保证原子性：
+  - 第一个写入者获得 owner 锁定
+  - 第二个写入者收到 already_claimed 错误
+  ↓
+获得任务的 teammate 执行工作
+  ↓
+完成后 TaskUpdate(task #3, {status: "completed"})
+  → 依赖此任务的其他任务自动解锁
+  → tool_result 提示 "Call TaskList to find your next task"
+ */
 export async function claimTask(
   taskListId: string,
   taskId: string,

@@ -26,6 +26,7 @@ function isScratchpadGateEnabled(): boolean {
   return checkStatsigFeatureGate_CACHED_MAY_BE_STALE('tengu_scratch')
 }
 
+// ! INTERNAL_WORKER_TOOLS（TeamCreate、TeamDelete、SendMessage、SyntheticOutput）被显式排除——Worker 不能嵌套创建团队或发送消息，防止不可控的递归。
 const INTERNAL_WORKER_TOOLS = new Set([
   TEAM_CREATE_TOOL_NAME,
   TEAM_DELETE_TOOL_NAME,
@@ -77,6 +78,7 @@ export function matchSessionMode(
     : 'Exited coordinator mode to match resumed session.'
 }
 
+// ! Worker 的可用工具由 getCoordinatorUserContext()（coordinatorMode.ts:80）动态注入到 System Prompt：
 export function getCoordinatorUserContext(
   mcpClients: ReadonlyArray<{ name: string }>,
   scratchpadDir?: string,
@@ -85,6 +87,7 @@ export function getCoordinatorUserContext(
     return {}
   }
 
+  // ! // 简化模式下：只有 Bash + Read + Edit
   const workerTools = isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)
     ? [BASH_TOOL_NAME, FILE_READ_TOOL_NAME, FILE_EDIT_TOOL_NAME]
         .sort()
@@ -101,6 +104,15 @@ export function getCoordinatorUserContext(
     content += `\n\nWorkers also have access to MCP tools from connected MCP servers: ${serverNames}`
   }
 
+  /**
+   * ! Scratchpad：跨 Worker 的共享知识库
+   * ! 当 isScratchpadGateEnabled()（内部检查 tengu_scratch feature gate）启用时，Workers 获得一个 Scratchpad 目录，Coordinator 通过其系统上下文知晓该目录的存在：
+   * ! Scratchpad 目录：
+        - Workers 可自由读写，无需权限审批
+        - 用于持久化的跨 Worker 知识
+        - 结构由 Coordinator 决定（无固定格式）
+      这是一个关键的协作原语——Worker A 的研究结果可以写入 Scratchpad，Worker B 直接读取，无需通过 Coordinator 中转。
+   */
   if (scratchpadDir && isScratchpadGateEnabled()) {
     content += `\n\nScratchpad directory: ${scratchpadDir}\nWorkers can read and write here without permission prompts. Use this for durable cross-worker knowledge — structure files however fits the work.`
   }

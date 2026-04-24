@@ -3744,6 +3744,19 @@ async function getTeammateMailboxAttachments(
           )
 
           // Unassign tasks owned by this teammate
+          /**
+           * Teammate 异常退出
+              ↓
+            unassignTeammateTasks()
+              → 扫描任务列表，找到 owner === teammateName 的未完成任务
+              → 重置为 pending + owner=undefined
+              ↓
+            Team Lead 感知途径：
+              1. 任务状态变化（pending 重置）—— 通过共享任务列表
+              2. Mailbox 空闲通知（TeammateIdle hook）—— Teammate 停止时自动通知 Lead
+              ↓
+            Team Lead 重新分配任务或创建新 Teammate
+           */
           await unassignTeammateTasks(
             teamName,
             teammateId,
