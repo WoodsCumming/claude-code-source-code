@@ -177,6 +177,7 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
     // created by `git worktree add`, or by EnterWorktree in a previous
     // session, do not populate it. This is the sole entry gate — everything
     // past this point operates on a path EnterWorktree created.
+    // ! 1. 检查是否在 EnterWorktree 创建的会话中（手动创建的 worktree 不会被删除）
     const session = getCurrentWorktreeSession()
     if (!session) {
       return {
@@ -187,11 +188,25 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
       }
     }
 
+
     if (input.action === 'remove' && !input.discard_changes) {
+      /**
+       * ! 2. countWorktreeChanges(worktreePath, originalHeadCommit)
+            ├── git status --porcelain → 统计未提交文件数
+            ├── git rev-list --count <originalHead>..HEAD → 统计新提交数
+            └── 返回 null（git 失败时）→ fail-closed（拒绝删除）
+       */
       const summary = await countWorktreeChanges(
         session.worktreePath,
         session.originalHeadCommit,
       )
+      /**
+        fail-closed 设计
+        countWorktreeChanges() 在以下情况返回 null（“未知，假设不安全”）：
+        git status 或 git rev-list 退出非零（锁文件、损坏的索引）
+        originalHeadCommit 未定义（hook-based worktree 没有设置基线 commit）
+        返回 null 时，validateInput 拒绝删除——宁可让用户手动处理，也不冒险丢失工作。
+       */
       if (summary === null) {
         return {
           result: false,
@@ -199,6 +214,8 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
           errorCode: 3,
         }
       }
+
+      // ! 3. 有未提交文件或新提交？→ 拒绝，要求 discard_changes: true 确认
       const { changedFiles, commits } = summary
       if (changedFiles > 0 || commits > 0) {
         const parts: string[] = []
@@ -253,12 +270,19 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
     // worktree state at validateInput time may not match now. Null (git
     // failure) falls back to 0/0; safety gating already happened in
     // validateInput, so this only affects analytics + messaging.
+    // ! 1. 重新计数变更（validateInput 和 call 之间可能有新修改）
     const { changedFiles, commits } = (await countWorktreeChanges(
       worktreePath,
       originalHeadCommit,
     )) ?? { changedFiles: 0, commits: 0 }
 
     if (input.action === 'keep') {
+      /**
+       * 1. chdir 回 originalCwd
+         2. 清空 currentWorktreeSession
+         3. 更新项目配置（activeWorktreeSession = undefined）
+         4. worktree 目录和分支保留在磁盘上
+       */
       await keepWorktree()
       restoreSessionToOriginalCwd(originalCwd, projectRootIsWorktree)
 
@@ -284,10 +308,24 @@ export const ExitWorktreeTool: Tool<InputSchema, Output> = buildTool({
     }
 
     // action === 'remove'
+    // ! 2. 如果有 tmux session → killTmuxSession()
     if (tmuxSessionName) {
       await killTmuxSession(tmuxSessionName)
     }
+    /**
+     * 3. cleanupWorktree()
+          ├── hook-based → 执行 WorktreeRemove hook
+          └── git-based → git worktree remove --force + git branch -D
+     */
     await cleanupWorktree()
+    /**
+     * 4. restoreSessionToOriginalCwd()
+          - setCwd(originalCwd)
+          - setOriginalCwd(originalCwd)
+          - 如果 projectRoot 是 worktree 时才恢复（防误触）
+          - 更新 hooks config snapshot
+          - 清空系统提示和 memory 缓存
+     */
     restoreSessionToOriginalCwd(originalCwd, projectRootIsWorktree)
 
     logEvent('tengu_worktree_removed', {

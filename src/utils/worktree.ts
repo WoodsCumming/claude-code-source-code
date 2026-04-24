@@ -137,20 +137,21 @@ async function symlinkDirectories(
   }
 }
 
+// ! 这使得 session 恢复（--resume）时能正确还原 worktree 上下文——即使进程重启，getCurrentWorktreeSession() 从项目配置中读取状态。
 export type WorktreeSession = {
-  originalCwd: string
-  worktreePath: string
-  worktreeName: string
-  worktreeBranch?: string
-  originalBranch?: string
-  originalHeadCommit?: string
-  sessionId: string
-  tmuxSessionName?: string
-  hookBased?: boolean
+  originalCwd: string // ! // 进入 worktree 前的工作目录
+  worktreePath: string  // ! // worktree 的绝对路径
+  worktreeName: string  // ! // slug
+  worktreeBranch?: string // ! // 分支名（如 worktree/fix-auth）
+  originalBranch?: string // ! // 进入前的分支
+  originalHeadCommit?: string // ! // 进入前的 HEAD commit（用于变更统计）
+  sessionId: string // ! // 创建此 worktree 的会话 ID
+  tmuxSessionName?: string  // ! // 关联的 tmux session
+  hookBased?: boolean // ! // 是否由 hook 创建
   /** How long worktree creation took (unset when resuming an existing worktree). */
-  creationDurationMs?: number
+  creationDurationMs?: number // ! // 创建耗时（分析用）
   /** True if git sparse-checkout was applied via settings.worktree.sparsePaths. */
-  usedSparsePaths?: boolean
+  usedSparsePaths?: boolean // ! // 是否使用了 sparse checkout
 }
 
 let currentWorktreeSession: WorktreeSession | null = null
@@ -232,6 +233,7 @@ function worktreePathFor(repoRoot: string, slug: string): string {
  * prevents unconditionally running `git fetch` (which can hang waiting for credentials)
  * on every resume.
  */
+// ! getOrCreateWorktree() 有一个关键优化：如果目标路径已存在，直接读取 .git 指针文件获取 HEAD SHA（纯文件 I/O，无子进程），跳过整个 fetch + worktree add 流程。在大仓库中 fetch 需要 6-8 秒，这个优化将恢复场景的延迟降到接近 0。
 async function getOrCreateWorktree(
   repoRoot: string,
   slug: string,
@@ -318,6 +320,9 @@ async function getOrCreateWorktree(
     baseSha = stdout.trim()
   }
 
+  /**
+   * ! 对于大型 monorepo，worktree 支持 sparsePaths 配置——只检出特定目录而非整个仓库。这在 210K 文件的仓库中将 worktree 创建时间从数十秒降到几秒。配置位于 getInitialSettings().worktree?.sparsePaths，在 performPostCreationSetup() 中应用。
+   */
   const sparsePaths = getInitialSettings().worktree?.sparsePaths
   const addArgs = ['worktree', 'add']
   if (sparsePaths?.length) {
@@ -712,6 +717,8 @@ export async function createWorktreeForSession(
   const originalCwd = getCwd()
 
   // Try hook-based worktree creation first (allows user-configured VCS)
+  // ! 有 WorktreeCreate hook？
+  // ! └── 执行 hook，返回 hook 指定的路径（支持非 git VCS）
   if (hasWorktreeCreateHook()) {
     const hookResult = await executeWorktreeCreateHook(slug)
     logForDebugging(
@@ -726,7 +733,7 @@ export async function createWorktreeForSession(
       tmuxSessionName,
       hookBased: true,
     }
-  } else {
+  } else { // ! 无 hook → git 原生路径：
     // Fall back to git worktree
     const gitRoot = findGitRoot(getCwd())
     if (!gitRoot) {
@@ -739,6 +746,7 @@ export async function createWorktreeForSession(
     const originalBranch = await getBranch()
 
     const createStart = Date.now()
+    // ! 快速恢复：检查 worktree 目录是否已存在
     const { worktreePath, worktreeBranch, headCommit, existed } =
       await getOrCreateWorktree(gitRoot, slug, options)
 
@@ -749,6 +757,13 @@ export async function createWorktreeForSession(
       logForDebugging(
         `Created worktree at: ${worktreePath} on branch: ${worktreeBranch}`,
       )
+      /**
+       * 新建：
+              i.   mkdir .claude/worktrees/（recursive）
+              ii.  fetch origin/<default-branch>（有缓存则跳过）
+              iii. git worktree add -b worktree/<slug> <path> <base>
+              iv.  performPostCreationSetup()（sparse checkout 等）
+       */
       await performPostCreationSetup(gitRoot, worktreePath)
       creationDurationMs = Date.now() - createStart
     }

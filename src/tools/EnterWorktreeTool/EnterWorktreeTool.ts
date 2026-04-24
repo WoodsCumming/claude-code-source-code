@@ -76,29 +76,34 @@ export const EnterWorktreeTool: Tool<InputSchema, Output> = buildTool({
   renderToolResultMessage,
   async call(input) {
     // Validate not already in a worktree created by this session
+    // ! 1. 检查是否已在 worktree 中（防嵌套）
     if (getCurrentWorktreeSession()) {
       throw new Error('Already in a worktree session')
     }
 
     // Resolve to main repo root so worktree creation works from within a worktree
+    // ! 2. 解析到主仓库根目录（findCanonicalGitRoot）如果当前已在 worktree 内，chdir 到主仓库
     const mainRepoRoot = findCanonicalGitRoot(getCwd())
     if (mainRepoRoot && mainRepoRoot !== getCwd()) {
       process.chdir(mainRepoRoot)
       setCwd(mainRepoRoot)
     }
 
+    // ! 3. 生成 slug（用户提供或 plan slug）
     const slug = input.name ?? getPlanSlug()
 
+    // ! 4. createWorktreeForSession(sessionId, slug)
     const worktreeSession = await createWorktreeForSession(getSessionId(), slug)
 
+    // ! 5. 更新进程状态：
     process.chdir(worktreeSession.worktreePath)
     setCwd(worktreeSession.worktreePath)
     setOriginalCwd(getCwd())
-    saveWorktreeState(worktreeSession)
+    saveWorktreeState(worktreeSession)  // ! 持久化到项目配置
     // Clear cached system prompt sections so env_info_simple recomputes with worktree context
-    clearSystemPromptSections()
+    clearSystemPromptSections() // ! 重新计算系统提示中的 cwd 信息
     // Clear memoized caches that depend on CWD
-    clearMemoryFileCaches()
+    clearMemoryFileCaches() // ! 重新加载 worktree 中的 CLAUDE.md
     getPlansDirectory.cache.clear?.()
 
     logEvent('tengu_worktree_created', {
@@ -109,6 +114,7 @@ export const EnterWorktreeTool: Tool<InputSchema, Output> = buildTool({
       ? ` on branch ${worktreeSession.worktreeBranch}`
       : ''
 
+    // ! 6. 返回 worktreePath 和 worktreeBranch
     return {
       data: {
         worktreePath: worktreeSession.worktreePath,

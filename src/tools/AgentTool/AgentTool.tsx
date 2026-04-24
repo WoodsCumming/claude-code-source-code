@@ -136,6 +136,19 @@ type AgentToolInput = z.infer<ReturnType<typeof baseInputSchema>> & {
   isolation?: 'worktree' | 'remote';
   cwd?: string;
 };
+/**
+ * 
+    与 Agent 工具的联动
+    Agent 工具（AgentTool）的 isolation 参数决定子 Agent 是否在 worktree 中运行。注意 Agent 工具使用专用的 createAgentWorktree()（src/utils/worktree.ts），而非用户会话用的 createWorktreeForSession()，两者有关键差异：
+    维度	createWorktreeForSession（用户会话）	createAgentWorktree（子 Agent）
+    调用者	EnterWorktreeTool	AgentTool
+    Session 管理	设置 currentWorktreeSession	不设置 currentWorktreeSession
+    恢复已有 worktree	直接复用	复用并 bump mtime（防止被周期性清理误删）
+    子 Agent 结束时的处理由 cleanupWorktreeIfNeeded() 自动完成——它不走 ExitWorktreeTool（因为 Agent worktree 没有会话状态，ExitWorktreeTool 的 validateInput 会拒绝）：
+    有变更 → 保留 worktree，返回 worktreePath 供主 Agent 后续合并
+    无变更 → 自动删除
+    Hook-based → 始终保留
+ */
 
 // Output schema - multi-agent spawned schema added dynamically at runtime when enabled
 export const outputSchema = lazySchema(() => {
