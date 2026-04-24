@@ -848,6 +848,8 @@ export const AgentTool = buildTool({
         }> | undefined;
         let cancelAutoBackground: (() => void) | undefined;
         if (!isBackgroundTasksDisabled) {
+          // ! 同步 Agent（前台运行）
+          // ! 同步 Agent 的关键特性是 可后台化
           const registration = registerAgentForeground({
             agentId: syncAgentId,
             description,
@@ -855,7 +857,7 @@ export const AgentTool = buildTool({
             selectedAgent,
             setAppState: rootSetAppState,
             toolUseId: toolUseContext.toolUseId,
-            autoBackgroundMs: getAutoBackgroundMs() || undefined
+            autoBackgroundMs: getAutoBackgroundMs() || undefined  // ! // 默认 120s
           });
           foregroundTaskId = registration.taskId;
           backgroundPromise = registration.backgroundSignal.then(() => ({
@@ -915,10 +917,12 @@ export const AgentTool = buildTool({
             // Race between next message and background signal
             // If background tasks are disabled, just await the next message directly
             const nextMessagePromise = agentIterator.next();
+            // ! 在 agentic loop 的每次迭代中，系统用 Promise.race 竞争下一条消息和后台化信号：
+            // ! 后台化后，前台迭代器被终止（agentIterator.return()），新的 runAgent() 以 isAsync: true 重新启动，当前台的输出文件继续写入。
             const raceResult = backgroundPromise ? await Promise.race([nextMessagePromise.then(r => ({
               type: 'message' as const,
               result: r
-            })), backgroundPromise]) : {
+            })), backgroundPromise]) : {  // ! // 超过 autoBackgroundMs 触发
               type: 'message' as const,
               result: await nextMessagePromise
             };
@@ -1327,6 +1331,15 @@ export const AgentTool = buildTool({
       updatedInput: input
     };
   },
+  // !  根据状态返回不同格式：
+  /**
+   * 状态	返回内容
+      completed	内容 + <usage> 块（token/tool_calls/duration）；无内容时插入占位文本 "(Subagent completed but returned no output.)" 防止模型误判为空
+      async_launched	agentId + outputFile 路径 + 操作指引（指引内容取决于 canReadOutputFile：有读取权限时提示通过 Read/Bash 查看进度，否则仅告知已启动）
+      teammate_spawned	agent_id + name + team_name
+      remote_launched	taskId + sessionUrl + outputFile
+   */
+   // ! 对于一次性内置 Agent（Explore、Plan），当不存在 worktree 隔离时，<usage> 块和 agentId 尾部被省略——每周节省约 1-2 Gtok 的上下文窗口。存在 worktree 时仍需返回 worktreePath 和 worktreeBranch 信息。
   mapToolResultToToolResultBlockParam(data, toolUseID) {
     // Multi-agent spawn result
     const internalData = data as InternalOutput;
