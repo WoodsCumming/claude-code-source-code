@@ -250,6 +250,30 @@ export const AgentTool = buildTool({
     return outputSchema();
   },
   // ! SubAgent 的执行核心在 runAgent() 函数（src/tools/AgentTool/runAgent.ts:248），由 AgentTool.tsx 的 call() 方法调用。
+  /**
+   * AgentTool.call({ subagent_type: "reviewer", ... })
+        ↓
+      1. 从 agentDefinitions.activeAgents 查找 agentType === "reviewer"
+        ↓
+      2. 检查 requiredMcpServers（如果 Agent 要求特定 MCP 服务器）
+        ↓
+      3. 过滤工具列表（tools / disallowedTools）
+        ↓
+      4. 解析模型：
+         - "inherit" → 使用主线程模型
+         - 具体模型名 → 直接使用
+         - 未指定 → 主线程模型
+        ↓
+      5. 解析权限模式（permissionMode）
+        ↓
+      6. 构建隔离环境（如果 isolation === "worktree"）
+        ↓
+      7. 注入 system prompt（getSystemPrompt()）
+        ↓
+      8. 注入 initialPrompt（如果定义了）
+        ↓
+      9. 启动子 Agent 循环（forkSubagent / runAgent）
+   */
   async call({
     prompt,
     subagent_type,

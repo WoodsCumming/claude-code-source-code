@@ -223,6 +223,64 @@ export type AgentDefinitionsResult = {
   allowedAgentTypes?: string[]
 }
 
+/*
+合并逻辑在 getActiveAgentsFromList() 中：按 agentType 去重，后者覆盖前者。这意味着你可以在 .claude/agents/ 中放一个 Explore.md 来完全替换内置的 Explore Agent。
+*/
+// ---
+// # === 必需字段 ===
+// name: "reviewer"                    # Agent 标识（agentType）
+// description: "Code review specialist, read-only analysis"
+// 
+// # === 工具控制 ===
+// tools: "Read,Glob,Grep,Bash"        # 允许的工具列表（逗号分隔）
+// disallowedTools: "Write,Edit"       # 显式禁止的工具
+// 
+// # === 模型配置 ===
+// model: "haiku"                      # 指定模型（或 "inherit" 继承主线程）
+// effort: "high"                      # 推理努力程度：low/medium/high 或整数
+// 
+// # === 行为控制 ===
+// maxTurns: 10                        # 最大 agentic 轮次
+// permissionMode: "plan"              # 权限模式：plan/bypassPermissions 等
+// background: true                    # 始终作为后台任务运行
+// initialPrompt: "/search TODO"       # 首轮用户消息前缀（支持斜杠命令）
+// 
+// # === 隔离与持久化 ===
+// isolation: "worktree"               # 在独立 git worktree 中运行
+// memory: "project"                   # 持久记忆范围：user/project/local
+// 
+// # === MCP 服务器 ===
+// mcpServers:
+//   - "slack"                         # 引用已配置的 MCP 服务器
+//   - database:                       # 内联定义
+//       command: "npx"
+//       args: ["mcp-db"]
+// 
+// # === Hooks ===
+// hooks:
+//   PreToolUse:
+//     - command: "audit-log.sh"
+//       timeout: 5000
+// 
+// # === Skills ===
+// skills: "code-review,security-review"  # 预加载的 skills（逗号分隔）
+// 
+// # === 显示 ===
+// color: "blue"                       # 终端中的 Agent 颜色标识
+// ---
+// 
+// 你是代码审查专家。你的职责是...
+// 
+// （正文内容 = system prompt）
+/*
+
+字段解析细节
+tools：通过 parseAgentToolsFromFrontmatter() 解析，支持逗号分隔字符串或数组
+model: "inherit"：使用主线程的模型（区分大小写，只有小写 “inherit” 有效）
+memory：启用后自动注入 Write/Edit/Read 工具（即使 tools 未包含），并在 system prompt 末尾追加 memory 指令
+isolation: "remote"：仅在 Anthropic 内部可用（USER_TYPE === 'ant'），外部构建只支持 worktree
+background：true 使 Agent 始终在后台运行，主线程不等待结果
+*/
 export function getActiveAgentsFromList(
   allAgents: AgentDefinition[],
 ): AgentDefinition[] {
@@ -339,7 +397,23 @@ export const getAgentDefinitionsWithOverrides = memoize(
 
     try {
       const markdownFiles = await loadMarkdownFilesForSubdir('agents', cwd)
+      /*
+      1. 加载 Markdown 文件
+        ├── loadMarkdownFilesForSubdir('agents', cwd)
+        │   ├── ~/.claude/agents/*.md  （用户级，source = 'userSettings'）
+        │   ├── .claude/agents/*.md    （项目级，source = 'projectSettings'）
+        │   └── managed/policy sources （策略级，source = 'policySettings'）
+      */
 
+      /*
+        │
+        └── 每个 .md 文件：
+            ├── 解析 YAML frontmatter
+            ├── 正文作为 system prompt
+            ├── 校验必需字段（name, description）
+            ├── 静默跳过无 frontmatter 的 .md 文件（可能是参考文档）
+            └── 解析失败 → 记录到 failedFiles，不阻塞其他 Agent
+      */
       const failedFiles: Array<{ path: string; error: string }> = []
       const customAgents = markdownFiles
         .map(({ filePath, baseDir, frontmatter, content, source }) => {
@@ -377,7 +451,15 @@ export const getAgentDefinitionsWithOverrides = memoize(
       // Kick off plugin agent loading concurrently with memory snapshot init —
       // loadPluginAgents is memoized and takes no args, so it's independent.
       // Join both so neither becomes a floating promise if the other throws.
+      /*
+      2. 并行加载 Plugin Agents
+        └── loadPluginAgents() → memoized
+      */
       let pluginAgentsPromise = loadPluginAgents()
+      /*
+      3. 初始化 Memory Snapshots（如果 AGENT_MEMORY_SNAPSHOT 启用）
+        └── initializeAgentMemorySnapshots()
+      */
       if (feature('AGENT_MEMORY_SNAPSHOT') && isAutoMemoryEnabled()) {
         const [pluginAgents_] = await Promise.all([
           pluginAgentsPromise,
@@ -395,8 +477,16 @@ export const getAgentDefinitionsWithOverrides = memoize(
         ...customAgents,
       ]
 
+      /*
+      4. 合并 Built-in + Plugin + Custom
+        └── getActiveAgentsFromList() → 按 agentType 去重，后者覆盖前者
+      */
       const activeAgents = getActiveAgentsFromList(allAgentsList)
 
+      /*
+      5. 分配颜色
+        └── setAgentColor(agentType, color) → 终端 UI 中区分不同 Agent
+      */
       // Initialize colors for all active agents
       for (const agent of activeAgents) {
         if (agent.color) {
@@ -756,7 +846,14 @@ export function parseAgentFromMarkdown(
         ? { mcpServers }
         : {}),
       ...(hooks !== undefined ? { hooks } : {}),
-      getSystemPrompt: () => {
+      /**
+       * 这意味着：
+          Markdown 正文 = 完整的 system prompt——不是追加，而是替换默认 prompt
+          Memory 指令在 memory 启用时自动追加到末尾
+          闭包延迟计算——memory 状态可能在文件加载后才变化
+          对于 Built-in Agent，getSystemPrompt 接受 toolUseContext 参数，可以根据运行时状态（如是否使用嵌入式搜索工具）动态调整 prompt 内容。
+       */
+      getSystemPrompt: () => {  // ! Agent 的 system prompt 通过 getSystemPrompt() 闭包延迟生成：
         if (isAutoMemoryEnabled() && memory) {
           const memoryPrompt = loadAgentMemoryPrompt(agentType, memory)
           return systemPrompt + '\n\n' + memoryPrompt

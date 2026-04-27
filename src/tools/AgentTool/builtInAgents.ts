@@ -22,6 +22,7 @@ export function areExplorePlanAgentsEnabled(): boolean {
 export function getBuiltInAgents(): AgentDefinition[] {
   // Allow disabling all built-in agents via env var (useful for SDK users who want a blank slate)
   // Only applies in noninteractive mode (SDK/API usage)
+  // ! SDK 入口（sdk-ts/sdk-py/sdk-cli）不加载 Code Guide Agent。环境变量 CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS 可以完全禁用内置 Agent，给 SDK 用户提供空白画布。
   if (
     isEnvTruthy(process.env.CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS) &&
     getIsNonInteractiveSession()

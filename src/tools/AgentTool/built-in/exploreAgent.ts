@@ -65,11 +65,11 @@ export const EXPLORE_AGENT: BuiltInAgentDefinition = {
   agentType: 'Explore',
   whenToUse: EXPLORE_WHEN_TO_USE,
   disallowedTools: [
-    AGENT_TOOL_NAME,
-    EXIT_PLAN_MODE_TOOL_NAME,
-    FILE_EDIT_TOOL_NAME,
-    FILE_WRITE_TOOL_NAME,
-    NOTEBOOK_EDIT_TOOL_NAME,
+    AGENT_TOOL_NAME,  // ! // 不能嵌套调用 Agent
+    EXIT_PLAN_MODE_TOOL_NAME, // ! // 不需要 plan mode
+    FILE_EDIT_TOOL_NAME,  // ! // 只读
+    FILE_WRITE_TOOL_NAME, // ! // 只读
+    NOTEBOOK_EDIT_TOOL_NAME,  // ! // 只读
   ],
   source: 'built-in',
   baseDir: 'built-in',
