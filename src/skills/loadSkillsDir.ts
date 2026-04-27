@@ -397,6 +397,7 @@ export function createSkillCommand({
       // shell commands (!`…` / ```! … ```) from their markdown body.
       // ${CLAUDE_SKILL_DIR} is meaningless for MCP skills anyway.
       // ! // 4. 执行 !`command` 内联 shell 命令（MCP 技能除外，不信任远程内容）
+      // ! 安全边界：MCP Skills 的 Prompt 内容禁止执行内联 shell 命令（loadSkillsDir.ts:374 的 loadedFrom !== 'mcp' 守卫），因为远程内容不可信。
       if (loadedFrom !== 'mcp') {
         finalContent = await executeShellCommandsInPrompt(
           finalContent,
@@ -431,6 +432,29 @@ export function createSkillCommand({
  * Only supports directory format: skill-name/SKILL.md
  */
 // ! loadSkillsFromSkillsDir() — 单目录加载
+/**
+ * 管理策略: $MANAGED_DIR/.claude/skills/     (policySettings)
+   用户全局: ~/.claude/skills/                 (userSettings)
+   项目级:   .claude/skills/                   (projectSettings, 向上遍历至 home)
+   附加目录: --add-dir 指定的路径下 .claude/skills/
+ */
+/**
+ * 磁盘 SKILL.md
+  ↓ parseFrontmatter()
+  ↓ parseSkillFrontmatterFields() → 16 个字段
+  ↓ createSkillCommand() → Command 对象
+  ↓ 去重（realpath + seenFileIds）
+  ↓ 条件 Skill → conditionalSkills Map（等待路径匹配激活）
+  ↓ getSkillDirCommands() memoize 缓存
+  ↓ getAllCommands() 合并 local + MCP
+  ↓ formatCommandsWithinBudget() → 截断后的 Skill 列表注入 System Prompt
+  ↓ AI 选择匹配的 Skill
+  ↓ SkillTool.validateInput() → 名称校验 + 存在性检查
+  ↓ SkillTool.checkPermissions() → 五层权限检查
+  ↓ SkillTool.call() → inline 或 fork 执行
+  ↓ contextModifier() → 注入 allowedTools + model + effort
+  ↓ recordSkillUsage() → 更新使用频率排名
+ */
 async function loadSkillsFromSkillsDir(
   basePath: string,
   source: SettingSource,
@@ -449,12 +473,14 @@ async function loadSkillsFromSkillsDir(
     entries.map(async (entry): Promise<SkillWithPath | null> => {
       try {
         // Only support directory format: skill-name/SKILL.md
+        // ! 1. readdir 扫描目录 → 仅保留 isDirectory() 或 isSymbolicLink() 的条目
         // ! // 只支持目录格式：skill-name/SKILL.md
         if (!entry.isDirectory() && !entry.isSymbolicLink()) {
           // Single .md files are NOT supported in /skills/ directory
           return null
         }
 
+        // ! 2. 在每个子目录中查找 SKILL.md，未找到则跳过
         const skillDirPath = join(basePath, entry.name)
         const skillFilePath = join(skillDirPath, 'SKILL.md')
 
@@ -472,11 +498,38 @@ async function loadSkillsFromSkillsDir(
           return null
         }
 
+        // ! 3. parseFrontmatter() 解析 YAML 头部，提取 whenToUse、allowedTools、context 等字段
         const { frontmatter, content: markdownContent } = parseFrontmatter(
           content,
           skillFilePath,
         )
 
+        // ! 4. parseSkillFrontmatterFields()（第 185 行）统一解析 16 个 frontmatter 字段
+        // ---
+        // name: code-review                    # 显示名称（覆盖目录名）
+        // description: 系统性代码审查           # 描述（或从 Markdown 首段提取）
+        // when_to_use: "用户说审查代码、找 bug"  # AI 自动匹配依据
+        // allowed-tools:                       # 工具白名单
+        //   - Read
+        //   - Grep
+        //   - Glob
+        // argument-hint: "<file-or-directory>" # 参数提示
+        // arguments: [path]                    # 声明式参数名（用于 $ARGUMENTS 替换）
+        // model: opus                          # 模型覆盖
+        // effort: high                         # 努力级别
+        // context: fork                        # 执行模式：inline（默认）| fork
+        // agent: code-reviewer                 # 指定 Agent 定义文件
+        // user-invocable: true                 # 用户是否可 /调用
+        // disable-model-invocation: false      # 禁止 AI 自主调用
+        // version: "1.0"                       # 版本号
+        // paths:                               # 条件激活的文件路径模式
+        //   - "src/**/*.ts"
+        // hooks:                               # Hook 配置
+        //   PreToolUse:
+        //     - command: ["echo", "checking"]
+        // shell: ["bash"]                      # Shell 执行环境
+        // ---
+        // ! 解析后有 16 个字段被提取，其中 allowedTools、model、effort 在执行时动态修改 toolPermissionContext。
         const skillName = entry.name
         const parsed = parseSkillFrontmatterFields(
           frontmatter,
@@ -485,6 +538,7 @@ async function loadSkillsFromSkillsDir(
         )
         const paths = parseSkillPaths(frontmatter)
 
+        // ! 5. createSkillCommand()（第 270 行）构造 Command 对象
         return {
           skill: createSkillCommand({
             ...parsed,
@@ -591,6 +645,7 @@ function getCommandName(file: MarkdownFile): string {
  * Supports both directory format (SKILL.md) and single .md file format.
  * Commands from /commands/ default to user-invocable: true
  */
+// ! Legacy Commands（/commands/ 目录）向后兼容的旧格式，由 loadSkillsFromCommandsDir()（第 566 行）加载。同时支持 SKILL.md 目录格式和单 .md 文件格式。
 async function loadSkillsFromCommandsDir(
   cwd: string,
 ): Promise<SkillWithPath[]> {
@@ -780,7 +835,7 @@ export const getSkillDirCommands = memoize(
     const fileIds = await Promise.all(
       allSkillsWithPaths.map(({ skill, filePath }) =>
         skill.type === 'prompt'
-          ? getFileIdentity(filePath)
+          ? getFileIdentity(filePath) // ! 去重机制：使用 realpath() 解析符号链接获得规范路径（getFileIdentity，第 118 行），避免通过符号链接或重叠父目录导致的重复加载。
           : Promise.resolve(null),
       ),
     )
@@ -915,6 +970,17 @@ export function onDynamicSkillsLoaded(callback: () => void): () => void {
  * @param filePaths Array of file paths to check
  * @param cwd Current working directory (upper bound for discovery)
  * @returns Array of newly discovered skill directories, sorted deepest first
+ */
+/**
+ * 
+动态发现与条件激活
+​
+基于文件路径的动态发现
+discoverSkillDirsForPaths()（loadSkillsDir.ts:861）在文件操作时触发：
+从被操作的文件路径开始，向上遍历至 CWD（不包含 CWD 本身）
+在每层查找 .claude/skills/ 目录
+使用 realpath 去重，git check-ignore 过滤 gitignored 目录
+按路径深度排序（深层优先），更接近文件的 Skill 优先级更高
  */
 export async function discoverSkillDirsForPaths(
   filePaths: string[],
@@ -1052,6 +1118,12 @@ export function getDynamicSkills(): Command[] {
  * @param cwd Current working directory (paths are matched relative to cwd)
  * @returns Array of newly activated skill names
  */
+/**
+ * 
+条件激活（paths frontmatter）
+带有 paths 模式的 Skill 在加载时不会立即可用，而是存入 conditionalSkills Map。当被操作的文件路径匹配某个 Skill 的 paths 模式时（使用 ignore 库做 gitignore 风格匹配），该 Skill 才被激活——从 conditionalSkills 移入 dynamicSkills。
+这意味着一个只在 *.test.ts 上激活的测试 Skill，平时完全不可见，只有当 AI 读取或编辑测试文件时才会出现。
+ */
 export function activateConditionalSkillsForPaths(
   filePaths: string[],
   cwd: string,
@@ -1138,6 +1210,7 @@ export function clearDynamicSkills(): void {
 // edge out into many cycle violations; a variable-specifier dynamic import
 // passes dep-cruiser but fails to resolve in Bun-bundled binaries at runtime).
 // eslint-disable-next-line custom-rules/no-top-level-side-effects -- write-once registration, idempotent
+// ! MCP Skills（动态发现）通过 registerMCPSkillBuilders() 注册构建器，MCP Server 的 prompt 被 mcpSkillBuilders.ts 转换为 Command 对象。标记为 loadedFrom: 'mcp'。
 registerMCPSkillBuilders({
   createSkillCommand,
   parseSkillFrontmatterFields,

@@ -924,6 +924,8 @@ async function getMessagesForPromptSlashCommand(command: CommandBase & PromptCom
   context.messages, 'repl_main_thread', {
     skipSkillDiscovery: true
   }));
+
+  // ! 返回 newMessages（注入到对话流）+ contextModifier（修改权限上下文）
   const messages = [createUserMessage({
     content: metadata,
     uuid

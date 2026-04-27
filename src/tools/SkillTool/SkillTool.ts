@@ -120,6 +120,7 @@ const remoteSkillModules = feature('EXPERIMENTAL_SKILL_SEARCH')
  * Executes a skill in a forked sub-agent context.
  * This runs the skill prompt in an isolated agent with its own token budget.
  */
+// ! Fork 模式适用于需要强隔离的场景（如长时间运行的审查任务），避免污染主对话的上下文。
 async function executeForkedSkill(
   command: Command & { type: 'prompt' },
   commandName: string,
@@ -204,6 +205,7 @@ async function executeForkedSkill(
     }),
   })
 
+  // ! prepareForkedCommandContext() 构建隔离的 Agent 定义和 Prompt
   const { modifiedGetAppState, baseAgent, promptMessages, skillContent } =
     await prepareForkedCommandContext(command, args || '', context)
 
@@ -223,6 +225,7 @@ async function executeForkedSkill(
   try {
     // Run the sub-agent
     // ! // 通过 runAgent() 在子 Agent 中执行技能
+    // ! runAgent() 启动子 Agent 循环，拥有独立的 token 预算
     for await (const message of runAgent({
       agentDefinition,
       promptMessages,
@@ -250,7 +253,7 @@ async function executeForkedSkill(
             c => c.type === 'tool_use' || c.type === 'tool_result',
           )
           if (hasToolContent) {
-            onProgress({
+            onProgress({  // ! 通过 onProgress 回调报告工具使用进度
               toolUseID: `skill_${parentMessage.message.id}`,
               data: {
                 message: m,
@@ -264,6 +267,7 @@ async function executeForkedSkill(
       }
     }
 
+    // ! 结果通过 extractResultText() 提取，子 Agent 的全部消息在提取后被释放（agentMessages.length = 0）
     const resultText = extractResultText(
       agentMessages,
       'Skill execution completed',
@@ -287,6 +291,7 @@ async function executeForkedSkill(
     }
   } finally {
     // Release skill content from invokedSkills state
+    // ! 最终通过 clearInvokedSkillsForAgent() 清理状态
     clearInvokedSkillsForAgent(agentId)
   }
 }
@@ -458,6 +463,18 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     return { result: true }
   },
 
+  // ! 权限模型：Safe Properties 白名单
+  /**
+   * 1. Deny 规则匹配（支持精确匹配和 prefix:* 通配符）
+        ↓ 未命中
+     2. 远程 canonical Skill 自动放行（EXPERIMENTAL_SKILL_SEARCH + USER_TYPE === 'ant'）
+        ↓ 未命中
+     3. Allow 规则匹配
+        ↓ 未命中
+     4. Safe Properties 白名单检查（skillHasOnlySafeProperties，第 911 行）
+        ↓ 有非安全属性
+     5. Ask 用户确认（附带精确匹配和前缀匹配两条建议规则）
+   */
   async checkPermissions(
     { skill, args },
     context,
@@ -631,12 +648,15 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     // AKI/GCS (with local cache), injects content directly as a user message.
     // Remote skills are declarative markdown so no slash-command expansion
     // (no !command substitution, no $ARGUMENTS interpolation) is needed.
+    // ! 远程技能加载（Experimental）
     if (
       feature('EXPERIMENTAL_SKILL_SEARCH') &&
       process.env.USER_TYPE === 'ant'
     ) {
+      // ! 1. validateInput() 中 stripCanonicalPrefix() 拦截 canonical 名称
       const slug = remoteSkillModules!.stripCanonicalPrefix(commandName)
       if (slug !== null) {
+        // ! 2. executeRemoteSkill()（第 970 行）从远程 URL 加载 SKILL.md
         return executeRemoteSkill(slug, commandName, parentMessage, context)
       }
     }
@@ -648,6 +668,7 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     recordSkillUsage(commandName)
 
     // Check if skill should run as a forked sub-agent
+    // ! Fork 模式（context: fork）
     if (command?.type === 'prompt' && command.context === 'fork') {
       return executeForkedSkill(
         command,
@@ -664,6 +685,8 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     const { processPromptSlashCommand } = await import(
       'src/utils/processUserInput/processSlashCommand.js'
     )
+    // ! Inline 模式（默认）
+    // ! processPromptSlashCommand() 处理参数替换（$ARGUMENTS）和 shell 命令展开（!`...`）
     const processedCommand = await processPromptSlashCommand(
       commandName,
       args || '', // Pass args if provided
@@ -761,6 +784,7 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     )
 
     // Tag user messages with sourceToolUseID so they stay transient until this tool resolves
+    // ! 返回 newMessages（注入到对话流）+ contextModifier（修改权限上下文）
     const newMessages = tagMessagesWithToolUseID(
       processedCommand.messages.filter(
         (m): m is UserMessage | AttachmentMessage | SystemMessage => {
@@ -805,7 +829,7 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
         let modifiedContext = ctx
 
         // Update allowed tools if specified
-        if (allowedTools.length > 0) {
+        if (allowedTools.length > 0) {  // ! 工具白名单注入：将 allowedTools 合并到 alwaysAllowRules.command
           // Capture the current getAppState to chain modifications properly
           const previousGetAppState = modifiedContext.getAppState
           modifiedContext = {
@@ -841,7 +865,7 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
             ...modifiedContext,
             options: {
               ...modifiedContext.options,
-              mainLoopModel: resolveSkillModelOverride(
+              mainLoopModel: resolveSkillModelOverride( // ! 模型切换：resolveSkillModelOverride() 处理模型覆盖，保留 [1m] 后缀以避免 200K 窗口截断
                 model,
                 ctx.options.mainLoopModel,
               ),
@@ -850,7 +874,7 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
         }
 
         // Override effort level if skill specifies one
-        if (effort !== undefined) {
+        if (effort !== undefined) { // ! 努力级别覆盖：修改 effortValue
           const previousGetAppState = modifiedContext.getAppState
           modifiedContext = {
             ...modifiedContext,
@@ -901,6 +925,9 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
 // If a skill has any property NOT in this set with a meaningful value, it requires
 // permission. This ensures new properties added to PromptCommand in the future
 // default to requiring permission until explicitly reviewed and added here.
+/**
+ * ! Safe Properties（SAFE_SKILL_PROPERTIES，第 876 行）是一个包含 30 个属性名的白名单（覆盖 PromptCommand 和 CommandBase 两个类型的所有安全属性）。任何不在白名单中的有意义的属性值（排除 undefined、null、空数组、空对象）都会触发权限请求。这是正向安全设计——未来新增的属性默认需要权限。
+ */
 const SAFE_SKILL_PROPERTIES = new Set([
   // PromptCommand properties
   'type',
@@ -1014,6 +1041,7 @@ async function executeRemoteSkill(
     )
   }
 
+  // ! 支持 gs://、https://、s3:// 等 URL 协议
   const urlScheme = extractUrlScheme(meta.url)
   let loadResult
   try {
@@ -1114,6 +1142,7 @@ async function executeRemoteSkill(
   // finalContent (not raw content) so the base directory header and
   // ${CLAUDE_SKILL_DIR} substitutions survive compaction — matches how local
   // skills store their already-transformed content via processSlashCommand.
+  // ! 通过 addInvokedSkill() 注册到 compaction 保留状态，确保压缩后仍可恢复
   addInvokedSkill(
     commandName,
     skillPath,
@@ -1123,6 +1152,7 @@ async function executeRemoteSkill(
 
   // Direct injection — wrap SKILL.md content in a meta user message. Matches
   // the shape of what processPromptSlashCommand produces for simple skills.
+  // ! 远程 Skill 不经过 processPromptSlashCommand——无 !command 替换、无 $ARGUMENTS 展开
   const toolUseID = getToolUseIDFromParentMessage(
     parentMessage,
     SKILL_TOOL_NAME,

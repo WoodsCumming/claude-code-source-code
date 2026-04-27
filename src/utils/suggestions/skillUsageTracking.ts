@@ -10,6 +10,16 @@ const lastWriteBySkill = new Map<string, number>()
  * Records a skill usage for ranking purposes.
  * Updates both usage count and last used timestamp.
  */
+/**
+ * 
+使用频率排名
+recordSkillUsage()（skillUsageTracking.ts）使用指数衰减算法计算 Skill 排名分数：
+score = usageCount × max(0.5^(daysSinceUse / 7), 0.1)
+7 天半衰期：一周前的使用权重减半
+最低 0.1 保底：避免老但高频使用的 Skill 完全沉底
+60 秒去抖：同一 Skill 在 1 分钟内的多次调用只计一次，减少文件 I/O
+排名数据持久化在全局配置的 skillUsage 字段中。
+ */
 export function recordSkillUsage(skillName: string): void {
   const now = Date.now()
   const lastWrite = lastWriteBySkill.get(skillName)

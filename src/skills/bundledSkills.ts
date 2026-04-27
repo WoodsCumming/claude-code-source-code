@@ -34,7 +34,7 @@ export type BundledSkillDefinition = {
    * skill: <dir>" line so the model can Read/Grep these files on demand —
    * same contract as disk-based skills.
    */
-  files?: Record<string, string>
+  files?: Record<string, string>  // ! （参考文件），首次调用时才解压到临时目录
   getPromptForCommand: (
     args: string,
     context: ToolUseContext,
@@ -65,7 +65,7 @@ export function registerBundledSkill(definition: BundledSkillDefinition): void {
   let getPromptForCommand = definition.getPromptForCommand
 
   if (files && Object.keys(files).length > 0) {
-    skillRoot = getBundledSkillExtractDir(definition.name)
+    skillRoot = getBundledSkillExtractDir(definition.name)  // ! 延迟文件提取：如果 Skill 声明了 files（参考文件），首次调用时才解压到临时目录
     // Closure-local memoization: extract once per process.
     // Memoize the promise (not the result) so concurrent callers await
     // the same extraction instead of racing into separate writes.
@@ -93,7 +93,7 @@ export function registerBundledSkill(definition: BundledSkillDefinition): void {
     disableModelInvocation: definition.disableModelInvocation ?? false,
     userInvocable: definition.userInvocable ?? true,
     contentLength: 0, // Not applicable for bundled skills
-    source: 'bundled',
+    source: 'bundled',  // ! 来源标记为 source: 'bundled'，在 Prompt 预算中享有不可截断的特权
     loadedFrom: 'bundled',
     hooks: definition.hooks,
     skillRoot,
@@ -191,6 +191,7 @@ const SAFE_WRITE_FLAGS =
       fsConstants.O_EXCL |
       O_NOFOLLOW
 
+// ! 使用 O_NOFOLLOW | O_EXCL 防止符号链接攻击
 async function safeWriteFile(p: string, content: string): Promise<void> {
   const fh = await open(p, SAFE_WRITE_FLAGS, 0o600)
   try {

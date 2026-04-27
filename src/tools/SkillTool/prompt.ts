@@ -67,6 +67,17 @@ function formatCommandDescription(cmd: Command): string {
 
 const MIN_DESC_LENGTH = 20
 
+/**
+ * Prompt 预算：1% 上下文窗口的截断策略
+    Skill 列表注入 System Prompt 时有严格的字符预算（prompt.ts）：
+    预算计算：contextWindowTokens × 4 chars/token × 1%（约 8000 字符）
+    单条上限：MAX_LISTING_DESC_CHARS = 250 字符（超出截断为 …）
+    Bundled Skills 不可截断：它们始终保留完整描述，预算不足时只截断非 bundled 的
+    降级策略：
+    尝试完整描述 → 超预算？
+    Bundled 保留完整，非 bundled 均分剩余预算 → 每条描述低于 20 字符？
+    非 bundled 仅保留名称
+ */
 export function formatCommandsWithinBudget(
   commands: Command[],
   contextWindowTokens?: number,
