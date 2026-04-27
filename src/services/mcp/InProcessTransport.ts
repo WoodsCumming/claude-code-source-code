@@ -54,6 +54,7 @@ class InProcessTransport implements Transport {
  *
  * @returns [clientTransport, serverTransport]
  */
+// ! // 创建一对 linked transport —— 消息在两端之间直接传递
 export function createLinkedTransportPair(): [Transport, Transport] {
   const a = new InProcessTransport()
   const b = new InProcessTransport()

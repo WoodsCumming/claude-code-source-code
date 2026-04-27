@@ -215,6 +215,11 @@ const DEFAULT_MCP_TOOL_TIMEOUT_MS = 100_000_000
  * OpenAPI-generated MCP servers have been observed dumping 15-60KB of endpoint
  * docs into tool.description; this caps the p95 tail without losing the intent.
  */
+/**
+ * 
+工具描述截断
+MCP 工具描述上限 2048 字符（MAX_MCP_DESCRIPTION_LENGTH）。OpenAPI 生成的 MCP 服务器曾观察到 15-60KB 的描述文档。
+ */
 const MAX_MCP_DESCRIPTION_LENGTH = 2048
 
 /**
@@ -356,8 +361,8 @@ function handleRemoteAuthFailure(
     name,
     `Authentication required for ${label[transportType]} server`,
   )
-  setMcpAuthCacheEntry(name)
-  return { name, type: 'needs-auth', config: serverRef }
+  setMcpAuthCacheEntry(name)  // ! ← 写入 15min TTL 缓存
+  return { name, type: 'needs-auth', config: serverRef }  // ! ← UI 显示认证提示
 }
 
 /**
@@ -513,6 +518,9 @@ export function wrapFetchWithTimeout(baseFetch: FetchLike): FetchLike {
     // completion. AbortSignal.timeout's internal timer is only released when the
     // signal is GC'd, which in Bun is lazy — ~2.4KB of native memory per request
     // lingers for the full 60s even when the request completes in milliseconds.
+    /**
+     * ! 请求级超时保护: 每个 HTTP 请求使用独立的 setTimeout 超时（wrapFetchWithTimeout，client.ts:493），而非共享 AbortSignal.timeout()。原因是 Bun 对 AbortSignal.timeout 的 GC 是惰性的——每个请求约 2.4KB 原生内存，即使请求毫秒级完成也要等 60s 才回收。
+     */
     const controller = new AbortController()
     const timer = setTimeout(
       c =>
@@ -591,6 +599,18 @@ export function getServerCacheKey(
  * @param name Server name
  * @param serverRef Scoped server configuration
  * @returns A wrapped client (either connected or failed)
+ */
+/**
+ * connectToServer()（client.ts:596-1643）根据 config.type 分发到不同的 Transport 实现：
+传输类型	Transport 类	适用场景	认证方式
+stdio（默认）	StdioClientTransport	外部本地子进程	无
+sse	SSEClientTransport	远程 SSE 服务	ClaudeAuthProvider + OAuth
+http	StreamableHTTPClientTransport	HTTP 流	ClaudeAuthProvider + OAuth
+sse-ide	SSEClientTransport	IDE 集成	lockfile token
+ws-ide	WebSocketTransport	IDE WebSocket	X-Claude-Code-Ide-Authorization
+ws	WebSocketTransport	WebSocket 服务	session ingress token
+claudeai-proxy	StreamableHTTPClientTransport	claude.ai 代理	OAuth bearer + 401 重试
+InProcess（内置）	InProcessTransport	Computer Use / Chrome	无（同进程）
  */
 export const connectToServer = memoize(
   async (
@@ -904,7 +924,7 @@ export const connectToServer = memoize(
         logMCPDebug(name, `claude.ai proxy transport created successfully`)
       } else if (
         (serverRef.type === 'stdio' || !serverRef.type) &&
-        isClaudeInChromeMCPServer(name)
+        isClaudeInChromeMCPServer(name) // ! // Chrome MCP — 在 process 内运行，避免 ~325MB 子进程
       ) {
         // Run the Chrome MCP server in-process to avoid spawning a ~325 MB subprocess
         const { createChromeContext } = await import(
@@ -920,12 +940,13 @@ export const connectToServer = memoize(
         inProcessServer = createClaudeForChromeMcpServer(context)
         const [clientTransport, serverTransport] = createLinkedTransportPair()
         await inProcessServer.connect(serverTransport)
+        // ! // client 端使用 clientTransport（与外部 MCP 的 Client 相同接口）
         transport = clientTransport
         logMCPDebug(name, `In-process Chrome MCP server started`)
       } else if (
         feature('CHICAGO_MCP') &&
         (serverRef.type === 'stdio' || !serverRef.type) &&
-        isComputerUseMCPServer!(name)
+        isComputerUseMCPServer!(name) // ! // Computer Use MCP — 同理 — 在 process 内运行，避免 ~325MB 子进程
       ) {
         // Run the Computer Use MCP server in-process — same rationale as
         // Chrome above. The package's CallTool handler is a stub; real
@@ -936,9 +957,11 @@ export const connectToServer = memoize(
         const { createLinkedTransportPair } = await import(
           './InProcessTransport.js'
         )
+        // ! // server 端连接到 serverTransport
         inProcessServer = await createComputerUseMcpServerForCli()
         const [clientTransport, serverTransport] = createLinkedTransportPair()
         await inProcessServer.connect(serverTransport)
+        // ! // client 端使用 clientTransport（与外部 MCP 的 Client 相同接口）
         transport = clientTransport
         logMCPDebug(name, `In-process Computer Use MCP server started`)
       } else if (serverRef.type === 'stdio' || !serverRef.type) {
@@ -1224,6 +1247,8 @@ export const connectToServer = memoize(
       // The SDK's transport calls onerror on connection failures but doesn't call onclose,
       // which CC uses to trigger reconnection. We bridge this gap by tracking consecutive
       // terminal errors and manually closing after MAX_ERRORS_BEFORE_RECONNECT failures.
+      // ! 远程传输有 连续错误计数器
+      // ! 遇到终端错误（ECONNRESET、ETIMEDOUT、EPIPE 等）连续 3 次后，主动关闭 transport 触发重连。对于 HTTP 传输，还检测 session 过期（404 + JSON-RPC code -32001）。
       let consecutiveConnectionErrors = 0
       const MAX_ERRORS_BEFORE_RECONNECT = 3
 
@@ -1386,14 +1411,14 @@ export const connectToServer = memoize(
         // Also clear fetch caches (keyed by server name). Reconnection
         // creates a new connection object; without clearing, the next
         // fetch would return stale tools/resources from the old connection.
-        fetchToolsForClient.cache.delete(name)
-        fetchResourcesForClient.cache.delete(name)
-        fetchCommandsForClient.cache.delete(name)
+        fetchToolsForClient.cache.delete(name)  // ! // 工具缓存
+        fetchResourcesForClient.cache.delete(name)  // ! // 资源缓存
+        fetchCommandsForClient.cache.delete(name) // ! // 命令缓存
         if (feature('MCP_SKILLS')) {
           fetchMcpSkillsForClient!.cache.delete(name)
         }
 
-        connectToServer.cache.delete(key)
+        connectToServer.cache.delete(key) // ! // 连接缓存
         logMCPDebug(name, `Cleared connection cache for reconnection`)
 
         if (originalOnclose) {
@@ -1427,6 +1452,8 @@ export const connectToServer = memoize(
         // NOTE: StdioClientTransport.close() only sends an abort signal, but many MCP servers
         // (especially Docker containers) need explicit SIGINT/SIGTERM signals to trigger graceful shutdown
         if (serverRef.type === 'stdio') {
+          // ! SIGINT (100ms) → SIGTERM (400ms) → SIGKILL
+          // ! 总清理时间上限 600ms，防止 MCP 服务器关闭阻塞 CLI 退出。
           try {
             const stdioTransport = transport as StdioClientTransport
             const childPid = stdioTransport.pid
@@ -1740,6 +1767,22 @@ export function mcpToolInputToAutoClassifierInput(
     : toolName
 }
 
+// ! 工具发现：从 MCP 到 Tool 接口
+// ! fetchToolsForClient()（client.ts:1744-2000）使用 memoizeWithLRU 缓存（上限 100），将 MCP 工具转换为 Claude Code 的统一 Tool 接口：
+/**
+ * 内置 vs 外部 MCP 对比总结
+维度	内置 MCP	外部 MCP
+Transport	InProcessTransport（同进程）	stdio / SSE / HTTP / WebSocket
+配置来源	setupComputerUseMCP() / setupClaudeInChrome() 等动态注册	settings.json / .mcp.json / 插件 / claude.ai
+Scope	dynamic	user / project / local / enterprise / claudeai
+进程模型	同进程，零开销	子进程（stdio）或网络连接
+名称保护	保留名，用户不可添加同名	自由命名（字母数字 + -_）
+生命周期	随 CLI 启停	连接缓存 + 按需重连
+权限	allowedTools 自动授权	passthrough 进入权限确认
+Feature Flag	CHICAGO_MCP（Computer Use）等	无（始终可用）
+工具发现	与外部相同（MCP 协议）	标准 MCP tools/list
+清理	inProcessServer.close()	信号升级策略 SIGINT→SIGTERM→SIGKILL
+ */
 export const fetchToolsForClient = memoizeWithLRU(
   async (client: MCPServerConnection): Promise<Tool[]> => {
     if (client.type !== 'connected') return []
@@ -1859,8 +1902,8 @@ export const fetchToolsForClient = memoizeWithLRU(
               const MAX_SESSION_RETRIES = 1
               for (let attempt = 0; ; attempt++) {
                 try {
-                  const connectedClient = await ensureConnectedClient(client)
-                  const mcpResult = await callMCPToolWithUrlElicitationRetry({
+                  const connectedClient = await ensureConnectedClient(client) // ! 确保连接有效（重连）
+                  const mcpResult = await callMCPToolWithUrlElicitationRetry({  // ! 带 Elicitation 重试
                     client: connectedClient,
                     clientConnection: client,
                     tool: tool.name,
@@ -1912,7 +1955,10 @@ export const fetchToolsForClient = memoizeWithLRU(
                   // cleared, so retry with a fresh client.
                   if (
                     error instanceof McpSessionExpiredError &&
-                    attempt < MAX_SESSION_RETRIES
+                    attempt < MAX_SESSION_RETRIES // ! 重试一次
+                    /**
+                     * ! Session 过期自动重试: HTTP 传输的 MCP session 可能过期。检测到 McpSessionExpiredError 后自动重试一次（client.ts:1862），因为 ensureConnectedClient() 已经清除了缓存并建立了新连接。
+                     */
                   ) {
                     logMCPDebug(
                       client.name,
@@ -2388,15 +2434,16 @@ export async function getMcpToolsCommandsAndResources(
   // Process both groups concurrently, each with their own concurrency limits:
   // - Local servers (stdio/sdk): lower concurrency to avoid process spawning resource contention
   // - Remote servers: higher concurrency since they're just network connections
+  // ! 本地 MCP 服务器（stdio）是重量级的子进程，默认限制 3 个并发连接。远程服务器是轻量级 HTTP 请求，允许 20 个并发
   await Promise.all([
     processBatched(
       localServers,
-      getMcpServerConnectionBatchSize(),
+      getMcpServerConnectionBatchSize(),  // ! // 本地服务器并发连接数  默认 3
       processServer,
     ),
     processBatched(
       remoteServers,
-      getRemoteMcpServerConnectionBatchSize(),
+      getRemoteMcpServerConnectionBatchSize(),  // ! // 远程服务器并发连接数  默认 20
       processServer,
     ),
   ])

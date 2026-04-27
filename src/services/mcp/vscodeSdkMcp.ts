@@ -68,6 +68,7 @@ export function setupVscodeSdkMcp(sdkClients: MCPServerConnection[]): void {
     // Store the client reference for later use
     vscodeMcpClient = client
 
+    // ! // 注册 log_event 通知处理器
     client.client.setNotificationHandler(
       LogEventNotificationSchema(),
       async notification => {
@@ -104,6 +105,7 @@ export function setupVscodeSdkMcp(sdkClients: MCPServerConnection[]): void {
     if (autoModeState !== undefined) {
       gates.tengu_auto_mode_state = autoModeState
     }
+    // ! // 发送实验门控到 VSCode
     void client.client.notification({
       method: 'experiment_gates',
       params: { gates },

@@ -642,6 +642,7 @@ if (additionalContexts.length > 0) {
     !isRestrictedToPluginOnly('hooks') ||
     isSourceAdminTrusted(agentDefinition.source)
   if (agentDefinition.hooks && hooksAllowedForThisAgent) {
+    // ! // runAgent.ts — 注册 agent 的前置 Hook
     registerFrontmatterHooks(
       rootSetAppState,
       agentId,
@@ -910,6 +911,7 @@ if (additionalContexts.length > 0) {
     // Clean up agent's session hooks
     if (agentDefinition.hooks) {
       // ! // 清理 frontmatter hooks
+      // ! // runAgent.ts — finally 块清理
       clearSessionHooks(rootSetAppState, agentId)
     }
     // Clean up prompt cache tracking state for this agent

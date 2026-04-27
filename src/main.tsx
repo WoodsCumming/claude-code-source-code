@@ -1633,6 +1633,7 @@ async function run(): Promise<CommanderCommand> {
     // `type: 'stdio'`. An enterprise-config ant with the GB gate on would
     // otherwise process.exit(1). Chrome has the same latent issue but has
     // shipped without incident; chicago places itself correctly.
+    // ! // main.tsx: Computer Use MCP 动态注册
     if (feature('CHICAGO_MCP') && getPlatform() === 'macos' && !getIsNonInteractiveSession()) {
       try {
         const {
@@ -1646,6 +1647,17 @@ async function run(): Promise<CommanderCommand> {
             mcpConfig,
             allowedTools: cuTools
           } = setupComputerUseMCP();
+          /**
+           * setupComputerUseMCP() 返回的配置:
+           * {
+                "computer-use": {
+                  type: "stdio",           // 类型标记为 stdio（但 client.ts 会拦截为 InProcessTransport）
+                  command: process.execPath,
+                  args: ["--computer-use-mcp"],
+                  scope: "dynamic",        // 动态作用域，不持久化
+                }
+              }
+           */
           dynamicMcpConfig = {
             ...dynamicMcpConfig,
             ...mcpConfig
@@ -2475,7 +2487,7 @@ async function run(): Promise<CommanderCommand> {
     // CLI flag (--mcp-config) should override file-based configs, matching settings precedence
     const allMcpConfigs = {
       ...existingMcpConfigs,
-      ...dynamicMcpConfig
+      ...dynamicMcpConfig // ! 内置服务器在 main.tsx 的启动流程中注册，注入 dynamicMcpConfig
     };
 
     // Separate SDK configs from regular MCP configs

@@ -1255,6 +1255,14 @@ export async function getClaudeCodeMcpConfigs(
  * This may be slow due to network calls - use getClaudeCodeMcpConfigs() for fast startup.
  * @returns All server configurations with appropriate scopes
  */
+/**
+ * 配置合并与去重
+getAllMcpConfigs()（config.ts）按优先级合并多个来源的配置：
+企业管控配置存在时，独占返回（忽略所有其他来源）
+否则合并：user → project → local → plugin → claude.ai
+插件与手动配置去重：通过 getMcpServerSignature() 生成内容签名（基于 command/args/url），插件配置被同名手动配置抑制
+addScopeToServers() 为每个配置项标注来源 scope
+ */
 export async function getAllMcpConfigs(): Promise<{
   servers: Record<string, ScopedMcpServerConfig>
   errors: PluginError[]

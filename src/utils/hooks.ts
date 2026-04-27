@@ -283,6 +283,9 @@ function executeInBackground({
  *
  * @returns true if hook should be skipped, false if it should execute
  */
+/**
+ * ! 所有 Hook 都要求工作区信任（shouldSkipHookDueToTrust() 函数，src/utils/hooks.ts）。这是纵深防御措施——防止恶意仓库的 .claude/settings.json 在未信任的情况下执行任意命令。
+ */
 export function shouldSkipHookDueToTrust(): boolean {
   // In non-interactive mode (SDK), trust is implicit - always execute
   const isInteractive = !getIsNonInteractiveSession()
@@ -1343,6 +1346,15 @@ async function execCommandHook(
  *   - Regex pattern (e.g., '^Write.*', '.*', '^(Write|Edit)$')
  * @returns true if the query matches the pattern
  */
+/**
+ * 匹配规则
+matcher 字段支持三种模式（matchesPattern() 函数，src/utils/hooks.ts）：
+
+"Write"              → 精确匹配
+"Write|Edit"         → 管道分隔的多值匹配
+"^Bash(git.*)"       → 正则匹配
+"*" 或 ""            → 通配（匹配所有）
+ */
 function matchesPattern(matchQuery: string, matcher: string): boolean {
   if (!matcher || matcher === '*') {
     return true
@@ -1386,6 +1398,19 @@ type IfConditionMatcher = (ifCondition: string) => boolean
  * Prepare a matcher for hook `if` conditions. Expensive work (tool lookup,
  * Zod validation, tree-sitter parsing for Bash) happens once here; the
  * returned closure is called per hook. Returns undefined for non-tool events.
+ */
+/**
+ * ! if 条件过滤
+Hook 可以指定 if 条件，只在特定输入时触发。prepareIfConditionMatcher()（src/utils/hooks.ts，prepareIfConditionMatcher 函数）预编译匹配器：
+
+{
+  "hooks": [{
+    "command": "check-git-branch.sh",
+    "if": "Bash(git push*)"
+  }]
+}
+
+if 条件使用 permissionRuleValueFromString 解析，支持与权限规则相同的语法（工具名 + 参数模式）。Bash 工具还会使用 tree-sitter 进行 AST 级别的命令解析。
  */
 async function prepareIfConditionMatcher(
   hookInput: HookInput,
@@ -1450,6 +1475,10 @@ function isInternalHook(matched: MatchedHook): boolean {
  * prefix, so two plugins sharing an unexpanded `${CLAUDE_PLUGIN_ROOT}/hook.sh`
  * template don't collapse: after expansion they point to different files.
  */
+/**
+ * ! Hook 去重
+同一个 Hook 命令在不同配置层级（user/project/local）可能重复。系统按四部分复合键做 Map 去重：${pluginRoot}\0${shell}\0${command}\0${ifCondition}（由 hookDedupKey() 函数构建），保留最后合并的层级。
+ */
 function hookDedupKey(m: MatchedHook, payload: string): string {
   return `${m.pluginRoot ?? m.skillRoot ?? ''}\0${payload}`
 }
@@ -1510,13 +1539,13 @@ function getHooksConfig(
     | PluginHookMatcher
     | SkillHookMatcher
     | SessionDerivedHookMatcher
-  > = [...(getHooksConfigFromSnapshot()?.[hookEvent] ?? [])]
+  > = [...(getHooksConfigFromSnapshot()?.[hookEvent] ?? [])]  // ! settings.json 中的 Hook（user/project/local）
 
   // Check if only managed hooks should run (used for both registered and session hooks)
   const managedOnly = shouldAllowManagedHooksOnly()
 
   // Process registered hooks (SDK callbacks and plugin native hooks)
-  const registeredHooks = getRegisteredHooks()?.[hookEvent]
+  const registeredHooks = getRegisteredHooks()?.[hookEvent] // ! SDK 注册的 callback Hook
   if (registeredHooks) {
     for (const matcher of registeredHooks) {
       // Skip plugin hooks when restricted to managed hooks only
@@ -1539,7 +1568,7 @@ function getHooksConfig(
   // plugin-provided agents' frontmatter hooks, which is too broad.
   // Also skip if appState not provided (for backwards compatibility)
   if (!managedOnly && appState !== undefined) {
-    const sessionHooks = getSessionHooks(appState, sessionId, hookEvent).get(
+    const sessionHooks = getSessionHooks(appState, sessionId, hookEvent).get( // ! Agent/Skill 前置注册的 session Hook
       hookEvent,
     )
     if (sessionHooks) {
@@ -1550,7 +1579,7 @@ function getHooksConfig(
     }
 
     // Merge session function hooks separately (can't be persisted to HookMatcher format)
-    const sessionFunctionHooks = getSessionFunctionHooks(
+    const sessionFunctionHooks = getSessionFunctionHooks( // ! 运行时 function Hook
       appState,
       sessionId,
       hookEvent,

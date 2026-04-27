@@ -197,6 +197,7 @@ export async function truncateMcpContent(
   }
 }
 
+// ! 大型 MCP 工具输出通过 truncateMcpContentIfNeeded 截断，二进制内容（图片）通过 persistBinaryContent 写入文件并返回文件路径。图片自动 resize（maybeResizeAndDownsampleImageBuffer）
 export async function truncateMcpContentIfNeeded(
   content: MCPToolResult,
 ): Promise<MCPToolResult> {
