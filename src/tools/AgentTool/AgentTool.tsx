@@ -360,6 +360,7 @@ export const AgentTool = buildTool({
     const effectiveType = subagent_type ?? (isForkSubagentEnabled() ? undefined : GENERAL_PURPOSE_AGENT.agentType);
     const isForkPath = effectiveType === undefined;
     let selectedAgent: AgentDefinition;
+    // ! Fork 路径
     if (isForkPath) {
       // Recursive fork guard: fork children keep the Agent tool in their
       // pool for cache-identical tool defs, so reject fork attempts at call
@@ -367,11 +368,13 @@ export const AgentTool = buildTool({
       // context.options at spawn time, survives autocompact's message
       // rewrite). Message-scan fallback catches any path where querySource
       // wasn't threaded.
+      // ! 递归防护检查
       if (toolUseContext.options.querySource === `agent:builtin:${FORK_AGENT.agentType}` || isInForkChild(toolUseContext.messages)) {
         throw new Error('Fork is not available inside a forked worker. Complete your task directly using your tools.');
       }
       selectedAgent = FORK_AGENT;
     } else {
+      // ! 普通路径
       // Filter agents to exclude those denied via Agent(AgentName) syntax
       const allAgents = toolUseContext.options.agentDefinitions.activeAgents;
       const {
@@ -531,15 +534,16 @@ export const AgentTool = buildTool({
     let forkParentSystemPrompt: ReturnType<typeof buildEffectiveSystemPrompt> | undefined;
     let promptMessages: MessageType[];
     if (isForkPath) {
+      // ! 获取父级 system prompt
       if (toolUseContext.renderedSystemPrompt) {
-        forkParentSystemPrompt = toolUseContext.renderedSystemPrompt;
+        forkParentSystemPrompt = toolUseContext.renderedSystemPrompt; // ! （首选）
       } else {
         // Fallback: recompute. May diverge from parent's cached bytes if
         // GrowthBook state changed between parent turn-start and fork spawn.
         const mainThreadAgentDefinition = appState.agent ? appState.agentDefinitions.activeAgents.find(a => a.agentType === appState.agent) : undefined;
         const additionalWorkingDirectories = Array.from(appState.toolPermissionContext.additionalWorkingDirectories.keys());
         const defaultSystemPrompt = await getSystemPrompt(toolUseContext.options.tools, toolUseContext.options.mainLoopModel, additionalWorkingDirectories, toolUseContext.options.mcpClients);
-        forkParentSystemPrompt = buildEffectiveSystemPrompt({
+        forkParentSystemPrompt = buildEffectiveSystemPrompt({         // ! (回退)
           mainThreadAgentDefinition,
           toolUseContext,
           customSystemPrompt: toolUseContext.options.customSystemPrompt,
@@ -548,6 +552,23 @@ export const AgentTool = buildTool({
         });
       }
       promptMessages = buildForkedMessages(prompt, assistantMessage);
+      /**
+       *       buildForkedMessages(prompt, assistantMessage)
+                ├── 克隆父级 assistant 消息
+                ├── 生成占位符 tool_result
+                └── 附加 directive 文本块
+       */
+      /**
+       * [
+          ...history (filterIncompleteToolCalls),  // 父级完整历史
+          assistant(所有 tool_use 块),              // 父级当前 turn 的 assistant 消息
+          user(
+            占位符 tool_result × N +               // 相同占位符文本
+            <fork-boilerplate> directive           // 每个 fork 不同
+          )
+        ]
+       */
+      // ! 所有 fork 使用相同的占位符文本："Fork started — processing in background"。这确保多个并行 fork 的 API 请求前缀完全一致，最大化 prompt cache 命中。
     } else {
       try {
         const additionalWorkingDirectories = Array.from(appState.toolPermissionContext.additionalWorkingDirectories.keys());
@@ -664,7 +685,7 @@ export const AgentTool = buildTool({
     // Fork + worktree: inject a notice telling the child to translate paths
     // and re-read potentially stale files. Appended after the fork directive
     // so it appears as the most recent guidance the child sees.
-    if (isForkPath && worktreeInfo) {
+    if (isForkPath && worktreeInfo) { // ! [可选]
       promptMessages.push(createUserMessage({
         content: buildWorktreeNotice(getCwd(), worktreeInfo.worktreePath)
       }));
