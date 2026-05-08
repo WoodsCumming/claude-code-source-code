@@ -8,6 +8,7 @@
  *
  * The native NAPI parser returns plain JS objects — no cleanup needed.
  */
+// ! AST 分析辅助,引号上下文、复合结构、危险模式提取
 
 type TreeSitterNode = {
   type: string
@@ -221,6 +222,7 @@ function replaceSpansKeepQuotes(
  *   inside them, and validators need to see those patterns. Matches the
  *   sync path's extractHeredocs({ quotedOnly: true }).
  */
+// ! 识别单引号、双引号、ANSI-C 字符串、heredoc
 export function extractQuoteContext(
   rootNode: unknown,
   command: string,
@@ -293,6 +295,7 @@ export function extractQuoteContext(
  * Extract compound command structure from the AST.
  * Replaces isUnsafeCompoundCommand() and splitCommand() for tree-sitter path.
  */
+// ! 检测管道、子 shell、命令组
 export function extractCompoundStructure(
   rootNode: unknown,
   command: string,
@@ -418,6 +421,7 @@ export function extractCompoundStructure(
  * NOT as a `;` operator. So if no actual `;` operator nodes exist in the AST,
  * there are no compound operators and hasBackslashEscapedOperator() can be skipped.
  */
+// ! 区分真实 ;/&&/`
 export function hasActualOperatorNodes(rootNode: unknown): boolean {
   const n = rootNode as TreeSitterNode
 
@@ -445,6 +449,7 @@ export function hasActualOperatorNodes(rootNode: unknown): boolean {
 /**
  * Extract dangerous pattern information from the AST.
  */
+// ! 检测命令替换、参数展开、heredocs
 export function extractDangerousPatterns(rootNode: unknown): DangerousPatterns {
   const n = rootNode as TreeSitterNode
   let hasCommandSubstitution = false
@@ -493,6 +498,7 @@ export function extractDangerousPatterns(rootNode: unknown): DangerousPatterns {
  * Extracts all security-relevant data from the AST in one pass.
  * This data must be extracted before tree.delete() is called.
  */
+// ! 单次遍历提取
 export function analyzeCommand(
   rootNode: unknown,
   command: string,

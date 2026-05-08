@@ -1,3 +1,5 @@
+// ! ts 实现的bash解析器
+// ! 纯 TS 词法分析 + 递归下降解析器
 /**
  * Pure-TypeScript bash parser producing tree-sitter-bash-compatible ASTs.
  *

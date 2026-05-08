@@ -53,6 +53,10 @@ export async function ensureInitialized(): Promise<void> {
   }
 }
 
+// ! bash 门控入口
+/**
+ * parseCommand()、parseCommandRaw()、ensureInitialized()
+ */
 export async function parseCommand(
   command: string,
 ): Promise<ParsedCommandData | null> {

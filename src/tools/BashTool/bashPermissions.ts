@@ -1,3 +1,5 @@
+// ! 权限检查入口,集成 AST 结果到权限决策
+
 import { feature } from 'bun:bundle'
 import { APIUserAbortError } from '@anthropic-ai/sdk'
 import type { z } from 'zod/v4'

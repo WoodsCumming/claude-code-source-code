@@ -18,6 +18,8 @@
  * argv[0] against permission rules and flag allowlists. If no, ask the user.
  */
 
+// ! 树遍历安全分析 + parseForSecurity()
+
 import { SHELL_KEYWORDS } from './bashParser.js'
 import type { Node } from './parser.js'
 import { PARSE_ABORTED, parseCommandRaw } from './parser.js'
@@ -378,6 +380,7 @@ const DOLLAR = String.fromCharCode(0x24)
  * statically analyze. Returns 'parse-unavailable' if tree-sitter WASM isn't
  * loaded — caller should fall back to conservative behavior.
  */
+// ! 顶层入口，返回 simple/too-complex/parse-unavailable
 export async function parseForSecurity(
   cmd: string,
 ): Promise<ParseForSecurityResult> {
@@ -397,6 +400,7 @@ export async function parseForSecurity(
  * still run on `cmd` — they catch tree-sitter/bash differentials that a
  * successful parse doesn't.
  */
+// ! 	接受预解析 AST
 export function parseForSecurityFromAst(
   cmd: string,
   root: Node | typeof PARSE_ABORTED,
@@ -479,6 +483,7 @@ function walkProgram(root: Node): ParseForSecurityResult {
  * Recursively collect leaf `command` nodes from a structural wrapper node.
  * Returns an error result on any disallowed node type, or null on success.
  */
+// ! 递归收集所有命令
 function collectCommands(
   node: Node,
   commands: SimpleCommand[],
@@ -1234,6 +1239,7 @@ function walkHerestringRedirect(
  * [variable_assignment...] command_name [argument...] [file_redirect...]
  * Any child type not explicitly handled triggers too-complex.
  */
+// ! 提取 argv、envVars、redirects
 function walkCommand(
   node: Node,
   extraRedirects: Redirect[],
@@ -1396,6 +1402,7 @@ function collectCommandSubstitution(
  * Convert an argument node to its literal string value. Quotes are resolved.
  * This function implements the argument-position allowlist.
  */
+// ! Allowlist 参数遍历
 function walkArgument(
   node: Node | null,
   innerCommands: SimpleCommand[],
@@ -2210,6 +2217,7 @@ export type SemanticCheckResult = { ok: true } | { ok: false; reason: string }
  * catch commands that tokenize fine but are dangerous by name or argument
  * content. Returns the first failure or {ok: true}.
  */
+// ! 后解析语义检查
 export function checkSemantics(commands: SimpleCommand[]): SemanticCheckResult {
   for (const cmd of commands) {
     // Strip safe wrapper commands (nohup, time, timeout N, nice -n N) so
