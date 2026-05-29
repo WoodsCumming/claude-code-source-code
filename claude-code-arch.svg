@@ -1,0 +1,277 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 860" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6"/>
+    </marker>
+    <marker id="arr-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arr-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#059669"/>
+    </marker>
+    <marker id="arr-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/>
+    </marker>
+    <filter id="sh" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#00000018"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="860" fill="#f8fafc"/>
+  <text x="600" y="36" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">Claude Code v2.1.88 — Source Architecture</text>
+  <text x="600" y="54" text-anchor="middle" font-size="13" fill="#64748b">Decompiled TypeScript · npm @anthropic-ai/claude-code</text>
+  <rect x="20" y="68" width="1160" height="78" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="28" y="83" font-size="11" font-weight="600" fill="#1d4ed8" opacity="0.7">① 入口层  Entry Layer</text>
+  <rect x="40" y="82" width="140" height="52" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="110" y="101" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">cli.tsx</text>
+  <text x="110" y="116" text-anchor="middle" font-size="10" fill="#64748b">entrypoints/</text>
+  <rect x="200" y="82" width="160" height="52" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="280" y="101" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">main.tsx</text>
+  <text x="280" y="116" text-anchor="middle" font-size="10" fill="#64748b">4715 lines · App Core</text>
+  <rect x="380" y="82" width="130" height="52" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="445" y="101" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">mcp.ts</text>
+  <text x="445" y="116" text-anchor="middle" font-size="10" fill="#64748b">MCP Server Entry</text>
+  <rect x="530" y="82" width="130" height="52" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="595" y="101" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">sdk/</text>
+  <text x="595" y="116" text-anchor="middle" font-size="10" fill="#64748b">AgentSDK exports</text>
+  <rect x="680" y="82" width="150" height="52" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="755" y="101" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">init.ts</text>
+  <text x="755" y="116" text-anchor="middle" font-size="10" fill="#64748b">Bootstrap · Auth</text>
+  <rect x="850" y="82" width="170" height="52" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="935" y="101" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">entrypoints/</text>
+  <text x="935" y="116" text-anchor="middle" font-size="10" fill="#64748b">cli / mcp / sdk</text>
+  <rect x="1040" y="82" width="120" height="52" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1100" y="101" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">plugins/</text>
+  <text x="1100" y="116" text-anchor="middle" font-size="10" fill="#64748b">Plugin Manager</text>
+  <rect x="20" y="162" width="1160" height="78" rx="10" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="28" y="177" font-size="11" font-weight="600" fill="#15803d" opacity="0.7">② 交互层  Interaction Layer (React Ink TUI)</text>
+  <rect x="40" y="176" width="160" height="52" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="120" y="195" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">REPL.tsx</text>
+  <text x="120" y="210" text-anchor="middle" font-size="10" fill="#64748b">screens/ · TUI loop</text>
+  <rect x="220" y="176" width="150" height="52" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="295" y="195" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">components/</text>
+  <text x="295" y="210" text-anchor="middle" font-size="10" fill="#64748b">146 React Ink files</text>
+  <rect x="390" y="176" width="140" height="52" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="460" y="195" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">commands/</text>
+  <text x="460" y="210" text-anchor="middle" font-size="10" fill="#64748b">80+ CLI cmds</text>
+  <rect x="550" y="176" width="130" height="52" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="615" y="195" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">keybindings/</text>
+  <text x="615" y="210" text-anchor="middle" font-size="10" fill="#64748b">Vim / custom keys</text>
+  <rect x="700" y="176" width="130" height="52" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="765" y="195" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">hooks/</text>
+  <text x="765" y="210" text-anchor="middle" font-size="10" fill="#64748b">87 React hooks</text>
+  <rect x="850" y="176" width="140" height="52" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="920" y="195" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">dialogLaunchers</text>
+  <text x="920" y="210" text-anchor="middle" font-size="10" fill="#64748b">Modal / dialogs</text>
+  <rect x="1010" y="176" width="150" height="52" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1085" y="195" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">screens/</text>
+  <text x="1085" y="210" text-anchor="middle" font-size="10" fill="#64748b">Doctor / Resume</text>
+  <rect x="20" y="256" width="1160" height="78" rx="10" fill="#fefce8" stroke="#eab308" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="28" y="271" font-size="11" font-weight="600" fill="#854d0e" opacity="0.7">③ 查询引擎  Query Engine</text>
+  <rect x="40" y="270" width="200" height="52" rx="6" fill="#fef9c3" stroke="#eab308" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="140" y="289" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">QueryEngine.ts</text>
+  <text x="140" y="304" text-anchor="middle" font-size="10" fill="#64748b">102 symbols · Main loop</text>
+  <rect x="260" y="270" width="200" height="52" rx="6" fill="#fef9c3" stroke="#eab308" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="360" y="289" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">claude.ts</text>
+  <text x="360" y="304" text-anchor="middle" font-size="10" fill="#64748b">services/api · 279 sym</text>
+  <rect x="480" y="270" width="180" height="52" rx="6" fill="#fef9c3" stroke="#eab308" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="570" y="289" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">query.ts</text>
+  <text x="570" y="304" text-anchor="middle" font-size="10" fill="#64748b">171 sym · Streaming</text>
+  <rect x="680" y="270" width="180" height="52" rx="6" fill="#fef9c3" stroke="#eab308" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="770" y="289" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">context/</text>
+  <text x="770" y="304" text-anchor="middle" font-size="10" fill="#64748b">System prompt assembly</text>
+  <rect x="880" y="270" width="160" height="52" rx="6" fill="#fef9c3" stroke="#eab308" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="960" y="289" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">getSystemContext()</text>
+  <text x="960" y="304" text-anchor="middle" font-size="10" fill="#64748b">Git·CLAUDE.md·Memory</text>
+  <rect x="1060" y="270" width="120" height="52" rx="6" fill="#fef9c3" stroke="#eab308" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1120" y="289" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">getTools()</text>
+  <text x="1120" y="304" text-anchor="middle" font-size="10" fill="#64748b">40+ tools filter</text>
+  <rect x="20" y="350" width="1160" height="164" rx="10" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="28" y="365" font-size="11" font-weight="600" fill="#6b21a8" opacity="0.7">④ 工具系统  Tool System  (40+ built-in tools)</text>
+  <rect x="40" y="366" width="110" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="95" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">BashTool</text>
+  <text x="95" y="396" text-anchor="middle" font-size="10" fill="#64748b">shell exec</text>
+  <rect x="160" y="366" width="110" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="215" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">FileReadTool</text>
+  <text x="215" y="396" text-anchor="middle" font-size="10" fill="#64748b">read/images</text>
+  <rect x="280" y="366" width="110" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="335" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">FileWriteTool</text>
+  <text x="335" y="396" text-anchor="middle" font-size="10" fill="#64748b">write files</text>
+  <rect x="400" y="366" width="110" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="455" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">FileEditTool</text>
+  <text x="455" y="396" text-anchor="middle" font-size="10" fill="#64748b">patch files</text>
+  <rect x="520" y="366" width="110" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="575" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">GlobTool</text>
+  <text x="575" y="396" text-anchor="middle" font-size="10" fill="#64748b">file search</text>
+  <rect x="640" y="366" width="110" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="695" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">GrepTool</text>
+  <text x="695" y="396" text-anchor="middle" font-size="10" fill="#64748b">code search</text>
+  <rect x="760" y="366" width="110" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="815" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">WebFetchTool</text>
+  <text x="815" y="396" text-anchor="middle" font-size="10" fill="#64748b">HTTP fetch</text>
+  <rect x="880" y="366" width="110" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="935" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">WebSearchTool</text>
+  <text x="935" y="396" text-anchor="middle" font-size="10" fill="#64748b">web search</text>
+  <rect x="1000" y="366" width="110" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1055" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">LSPTool</text>
+  <text x="1055" y="396" text-anchor="middle" font-size="10" fill="#64748b">language svc</text>
+  <rect x="1120" y="366" width="52" height="44" rx="6" fill="#f3e8ff" stroke="#a855f7" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1146" y="393" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">...</text>
+  <rect x="40" y="420" width="130" height="44" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="105" y="435" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">AgentTool</text>
+  <text x="105" y="450" text-anchor="middle" font-size="10" fill="#64748b">sub-agents · fork</text>
+  <rect x="180" y="420" width="130" height="44" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="245" y="435" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">MCPTool</text>
+  <text x="245" y="450" text-anchor="middle" font-size="10" fill="#64748b">MCP protocol</text>
+  <rect x="320" y="420" width="130" height="44" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="385" y="435" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">SkillTool</text>
+  <text x="385" y="450" text-anchor="middle" font-size="10" fill="#64748b">slash commands</text>
+  <rect x="460" y="420" width="130" height="44" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="525" y="435" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">WorkflowTool</text>
+  <text x="525" y="450" text-anchor="middle" font-size="10" fill="#64748b">multi-agent wf</text>
+  <rect x="600" y="420" width="130" height="44" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="665" y="435" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">TaskCreate/Get/</text>
+  <text x="665" y="450" text-anchor="middle" font-size="10" fill="#64748b">task management</text>
+  <rect x="740" y="420" width="130" height="44" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="805" y="435" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">CronCreate/Del/</text>
+  <text x="805" y="450" text-anchor="middle" font-size="10" fill="#64748b">scheduled tasks</text>
+  <rect x="880" y="420" width="130" height="44" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="945" y="435" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">EnterPlanMode</text>
+  <text x="945" y="450" text-anchor="middle" font-size="10" fill="#64748b">plan gating</text>
+  <rect x="1020" y="420" width="130" height="44" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1085" y="435" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">AskUserQuestion</text>
+  <text x="1085" y="450" text-anchor="middle" font-size="10" fill="#64748b">interactive Q</text>
+  <rect x="40" y="474" width="280" height="32" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="180" y="483" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">services/tools/toolExecution.ts</text>
+  <text x="180" y="498" text-anchor="middle" font-size="10" fill="#64748b">74 sym</text>
+  <rect x="330" y="474" width="280" height="32" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="470" y="483" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">StreamingToolExecutor.ts</text>
+  <text x="470" y="498" text-anchor="middle" font-size="10" fill="#64748b">50 sym · parallel</text>
+  <rect x="620" y="474" width="280" height="32" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="760" y="483" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">toolHooks.ts  · toolOrchestration.ts</text>
+  <text x="760" y="498" text-anchor="middle" font-size="10" fill="#64748b">hooks &amp; routing</text>
+  <rect x="910" y="474" width="270" height="32" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1045" y="483" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">permissions/ · classifiers · YOLO</text>
+  <text x="1045" y="498" text-anchor="middle" font-size="10" fill="#64748b">allow/deny logic</text>
+  <rect x="20" y="528" width="1160" height="68" rx="10" fill="#fef2f2" stroke="#ef4444" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="28" y="543" font-size="11" font-weight="600" fill="#991b1b" opacity="0.7">⑤ 状态管理  State Management</text>
+  <rect x="40" y="542" width="220" height="44" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="150" y="557" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">state/AppState.tsx</text>
+  <text x="150" y="572" text-anchor="middle" font-size="10" fill="#64748b">Redux-like · conversation thread</text>
+  <rect x="280" y="542" width="200" height="44" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="380" y="557" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">state/AppStateStore.ts</text>
+  <text x="380" y="572" text-anchor="middle" font-size="10" fill="#64748b">persistent sessions·settings</text>
+  <rect x="500" y="542" width="180" height="44" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="590" y="557" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">state/store.ts</text>
+  <text x="590" y="572" text-anchor="middle" font-size="10" fill="#64748b">message history·request tracking</text>
+  <rect x="700" y="542" width="180" height="44" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="790" y="557" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">cost-tracker.ts</text>
+  <text x="790" y="572" text-anchor="middle" font-size="10" fill="#64748b">token cost &amp; budgets</text>
+  <rect x="900" y="542" width="180" height="44" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="990" y="557" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">migrations/</text>
+  <text x="990" y="572" text-anchor="middle" font-size="10" fill="#64748b">data schema migrations</text>
+  <rect x="1100" y="542" width="60" height="44" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1130" y="569" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">...</text>
+  <rect x="20" y="610" width="1160" height="112" rx="10" fill="#fff7ed" stroke="#f97316" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="28" y="625" font-size="11" font-weight="600" fill="#9a3412" opacity="0.7">⑥ 服务层  Services</text>
+  <rect x="40" y="626" width="140" height="42" rx="6" fill="#ffedd5" stroke="#f97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="110" y="640" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">analytics/</text>
+  <text x="110" y="655" text-anchor="middle" font-size="10" fill="#64748b">Anthropic·Datadog</text>
+  <rect x="190" y="626" width="140" height="42" rx="6" fill="#ffedd5" stroke="#f97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="260" y="640" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">mcp/client.ts</text>
+  <text x="260" y="655" text-anchor="middle" font-size="10" fill="#64748b">142 sym · MCP mgr</text>
+  <rect x="340" y="626" width="140" height="42" rx="6" fill="#ffedd5" stroke="#f97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="410" y="640" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">oauth/</text>
+  <text x="410" y="655" text-anchor="middle" font-size="10" fill="#64748b">PKCE auth flow</text>
+  <rect x="490" y="626" width="140" height="42" rx="6" fill="#ffedd5" stroke="#f97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="560" y="640" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">compact/</text>
+  <text x="560" y="655" text-anchor="middle" font-size="10" fill="#64748b">context compression</text>
+  <rect x="640" y="626" width="140" height="42" rx="6" fill="#ffedd5" stroke="#f97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="710" y="640" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">lsp/</text>
+  <text x="710" y="655" text-anchor="middle" font-size="10" fill="#64748b">LSP server mgr</text>
+  <rect x="790" y="626" width="140" height="42" rx="6" fill="#ffedd5" stroke="#f97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="860" y="640" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">SessionMemory/</text>
+  <text x="860" y="655" text-anchor="middle" font-size="10" fill="#64748b">in-session memory</text>
+  <rect x="940" y="626" width="140" height="42" rx="6" fill="#ffedd5" stroke="#f97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1010" y="640" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">remoteManagedSettings</text>
+  <text x="1010" y="655" text-anchor="middle" font-size="10" fill="#64748b">remote killswitch</text>
+  <rect x="1090" y="626" width="90" height="42" rx="6" fill="#ffedd5" stroke="#f97316" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1135" y="640" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">autoDream/</text>
+  <text x="1135" y="655" text-anchor="middle" font-size="10" fill="#64748b">consolidate</text>
+  <rect x="40" y="676" width="140" height="42" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="110" y="690" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">extractMemories/</text>
+  <text x="110" y="705" text-anchor="middle" font-size="10" fill="#64748b">memdir / .claude</text>
+  <rect x="190" y="676" width="140" height="42" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="260" y="690" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">teamMemorySync/</text>
+  <text x="260" y="705" text-anchor="middle" font-size="10" fill="#64748b">team mem sync</text>
+  <rect x="340" y="676" width="140" height="42" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="410" y="690" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">plugins/</text>
+  <text x="410" y="705" text-anchor="middle" font-size="10" fill="#64748b">plugin install mgr</text>
+  <rect x="490" y="676" width="140" height="42" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="560" y="690" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">notifier.ts</text>
+  <text x="560" y="705" text-anchor="middle" font-size="10" fill="#64748b">push notifications</text>
+  <rect x="640" y="676" width="140" height="42" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="710" y="690" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">voice/</text>
+  <text x="710" y="705" text-anchor="middle" font-size="10" fill="#64748b">STT / TTS voice</text>
+  <rect x="790" y="676" width="140" height="42" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="860" y="690" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">settingsSync/</text>
+  <text x="860" y="705" text-anchor="middle" font-size="10" fill="#64748b">settings sync</text>
+  <rect x="940" y="676" width="140" height="42" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1010" y="690" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">PromptSuggestion/</text>
+  <text x="1010" y="705" text-anchor="middle" font-size="10" fill="#64748b">speculation prefetch</text>
+  <rect x="1090" y="676" width="90" height="42" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1135" y="690" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">MagicDocs/</text>
+  <text x="1135" y="705" text-anchor="middle" font-size="10" fill="#64748b">doc enhance</text>
+  <rect x="20" y="736" width="1160" height="76" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="28" y="751" font-size="11" font-weight="600" fill="#475569" opacity="0.7">⑦ 外部系统  External Systems</text>
+  <rect x="40" y="750" width="190" height="52" rx="6" fill="#e2e8f0" stroke="#64748b" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="135" y="769" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Claude API (Anthropic)</text>
+  <text x="135" y="784" text-anchor="middle" font-size="10" fill="#64748b">claude-3/4 models · streaming</text>
+  <rect x="250" y="750" width="170" height="52" rx="6" fill="#e2e8f0" stroke="#64748b" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="335" y="769" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Anthropic Telemetry</text>
+  <text x="335" y="784" text-anchor="middle" font-size="10" fill="#64748b">/api/claude_code events</text>
+  <rect x="440" y="750" width="140" height="52" rx="6" fill="#e2e8f0" stroke="#64748b" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="510" y="769" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Datadog Metrics</text>
+  <text x="510" y="784" text-anchor="middle" font-size="10" fill="#64748b">prod observability</text>
+  <rect x="600" y="750" width="150" height="52" rx="6" fill="#e2e8f0" stroke="#64748b" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="675" y="769" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">MCP Servers</text>
+  <text x="675" y="784" text-anchor="middle" font-size="10" fill="#64748b">stdio / HTTP / SSE</text>
+  <rect x="770" y="750" width="160" height="52" rx="6" fill="#e2e8f0" stroke="#64748b" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="850" y="769" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">GrowthBook</text>
+  <text x="850" y="784" text-anchor="middle" font-size="10" fill="#64748b">feature flags/gates</text>
+  <rect x="950" y="750" width="150" height="52" rx="6" fill="#e2e8f0" stroke="#64748b" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1025" y="769" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Remote Settings</text>
+  <text x="1025" y="784" text-anchor="middle" font-size="10" fill="#64748b">/api/settings poll 1h</text>
+  <rect x="1120" y="750" width="60" height="52" rx="6" fill="#e2e8f0" stroke="#64748b" stroke-width="1.2" filter="url(#sh)"/>
+  <text x="1150" y="769" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">OAuth</text>
+  <text x="1150" y="784" text-anchor="middle" font-size="10" fill="#64748b">PKCE</text>
+  <line x1="280" y1="146" x2="280" y2="162" stroke="#3b82f6" stroke-width="2" marker-end="url(#arr)"/>
+  <rect x="258" y="145" width="44" height="16" rx="3" fill="#f8fafc" opacity="0.95"/>
+  <text x="280" y="157" text-anchor="middle" font-size="10" fill="#475569">renders</text>
+  <line x1="120" y1="240" x2="160" y2="256" stroke="#3b82f6" stroke-width="2" marker-end="url(#arr)"/>
+  <rect x="118" y="239" width="44" height="16" rx="3" fill="#f8fafc" opacity="0.95"/>
+  <text x="140" y="251" text-anchor="middle" font-size="10" fill="#475569">query</text>
+  <line x1="360" y1="334" x2="360" y2="350" stroke="#ea580c" stroke-width="2" marker-end="url(#arr-orange)"/>
+  <rect x="338" y="333" width="44" height="16" rx="3" fill="#f8fafc" opacity="0.95"/>
+  <text x="360" y="345" text-anchor="middle" font-size="10" fill="#475569">tool call</text>
+  <line x1="200" y1="510" x2="200" y2="528" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr-purple)"/>
+  <rect x="178" y="510" width="44" height="16" rx="3" fill="#f8fafc" opacity="0.95"/>
+  <text x="200" y="522" text-anchor="middle" font-size="10" fill="#475569">state update</text>
+  <line x1="760" y1="334" x2="600" y2="528" stroke="#059669" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arr-green)"/>
+  <rect x="658" y="411" width="44" height="16" rx="3" fill="#f8fafc" opacity="0.95"/>
+  <text x="680" y="423" text-anchor="middle" font-size="10" fill="#475569">read msgs</text>
+  <line x1="360" y1="334" x2="135" y2="736" stroke="#3b82f6" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="110" y1="722" x2="335" y2="736" stroke="#ea580c" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arr-orange)"/>
+  <line x1="1100" y1="134" x2="410" y2="626" stroke="#059669" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arr-green)"/>
+  <line x1="500" y1="590" x2="860" y2="626" stroke="#7c3aed" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arr-purple)"/>
+  <rect x="822" y="820" width="360" height="34" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="830" y="833" font-size="10" font-weight="600" fill="#475569">Legend:</text>
+  <line x1="882" y1="829" x2="907" y2="829" stroke="#3b82f6" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="912" y="833" font-size="10" fill="#475569">data flow</text>
+  <line x1="967" y1="829" x2="992" y2="829" stroke="#ea580c" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arr-orange)"/>
+  <text x="997" y="833" font-size="10" fill="#475569">control/async</text>
+  <line x1="1070" y1="829" x2="1095" y2="829" stroke="#059669" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arr-green)"/>
+  <text x="1100" y="833" font-size="10" fill="#475569">mem read</text>
+  <line x1="882" y1="844" x2="907" y2="844" stroke="#7c3aed" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arr-purple)"/>
+  <text x="912" y="848" font-size="10" fill="#475569">state event</text>
+  <text x="830" y="848" font-size="10" fill="#94a3b8">© Research / Educational Only</text>
+</svg>
